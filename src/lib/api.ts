@@ -13,6 +13,8 @@ export interface Task {
   createdAt: string;
 }
 
+export type WindowMode = "collapsed" | "expanded";
+
 export const api = {
   listTasks: () => invoke<Task[]>("list_tasks"),
   addTask: (title: string, remindAt?: string | null) =>
@@ -25,4 +27,8 @@ export const api = {
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: string) =>
     invoke<void>("set_setting", { key, value }),
+  expandPanel: () => invoke<WindowMode>("expand_panel"),
+  collapsePanel: () => invoke<WindowMode>("collapse_panel"),
+  setPanelEditing: (editing: boolean) =>
+    invoke<void>("set_panel_editing", { editing }),
 };

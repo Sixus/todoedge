@@ -2,9 +2,11 @@ import { FormEvent, useState } from "react";
 
 interface TaskInputProps {
   onAdd: (title: string) => Promise<void>;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }
 
-export function TaskInput({ onAdd }: TaskInputProps) {
+export function TaskInput({ onAdd, onFocus, onBlur }: TaskInputProps) {
   const [title, setTitle] = useState("");
   const [isAdding, setIsAdding] = useState(false);
 
@@ -28,9 +30,10 @@ export function TaskInput({ onAdd }: TaskInputProps) {
     <form className="task-input" onSubmit={handleSubmit}>
       <input
         aria-label="新建任务"
-        autoFocus
         disabled={isAdding}
+        onBlur={onBlur}
         onChange={(event) => setTitle(event.target.value)}
+        onFocus={onFocus}
         placeholder="新建任务…"
         type="text"
         value={title}

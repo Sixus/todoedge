@@ -13,9 +13,13 @@
     "windows": [
       {
         "title": "TodoEdge",
-        "width": 400,
-        "height": 600,
-        "center": true
+        "width": 6,
+        "height": 432,
+        "decorations": false,
+        "shadow": false,
+        "resizable": false,
+        "skipTaskbar": true,
+        "transparent": true
       }
     ],
     "security": {
