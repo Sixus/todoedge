@@ -135,12 +135,107 @@ button {
 .picker-card {
   position: fixed;
   z-index: 30;
-  width: 250px;
   padding: 12px;
   border: 1px solid var(--pop-border);
   border-radius: 10px;
   background: var(--pop-bg);
   box-shadow: var(--pop-shadow);
+}
+
+/* ① 日历 */
+.picker-cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.picker-cal-nav:hover {
+  background: var(--surface-hover);
+  color: var(--fg);
+}
+
+.picker-weekrow {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  padding-bottom: 2px;
+  color: var(--fg-faint);
+  font-size: 11px;
+  text-align: center;
+}
+
+.picker-calgrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+}
+
+.picker-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+
+.picker-cell:hover {
+  background: var(--surface-hover);
+}
+
+.picker-cell-muted {
+  color: var(--fg-faint);
+  opacity: 0.55;
+}
+
+/* 今天：细描边圆圈 */
+.picker-cell-today {
+  box-shadow: inset 0 0 0 1px var(--check-bg);
+  color: var(--check-bg);
+}
+
+/* 选中：蓝底 */
+.picker-cell-selected {
+  background: var(--check-bg);
+  color: var(--check-fg);
+}
+
+.picker-cell-selected:hover {
+  background: var(--check-bg);
+  color: var(--check-fg);
+}
+
+/* ② 时间行（整点/半点下拉的收起态） */
+.picker-time-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--fg);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 120ms ease-out;
+}
+
+.picker-time-row:hover {
+  border-color: var(--input-focus);
 }
 
 .picker-input {
@@ -159,39 +254,41 @@ button {
   border-color: var(--input-focus);
 }
 
-.picker-btn {
-  height: 28px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 6px;
+/* ③ 清除/确定两个大按钮 */
+.picker-btn-big {
+  flex: 1;
+  height: 34px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
   background: transparent;
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
   transition:
     color 120ms ease-out,
     background-color 120ms ease-out;
 }
 
-.picker-btn:hover:not(:disabled) {
+.picker-btn-big:hover {
   background: var(--surface-hover);
   color: var(--fg);
 }
 
-.picker-btn:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.picker-btn-primary {
+.picker-btn-big-primary {
+  border-color: var(--check-bg);
   background: var(--check-bg);
   color: var(--check-fg);
 }
 
-.picker-btn-primary:hover:not(:disabled) {
+.picker-btn-big-primary:hover:not(:disabled) {
   background: var(--check-bg);
   color: var(--check-fg);
   opacity: 0.92;
+}
+
+.picker-btn-big-primary:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 /* 整点/半点下拉列表（打开时滚动到当前选中项） */
