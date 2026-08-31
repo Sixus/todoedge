@@ -177,12 +177,15 @@ pub fn set_panel_editing(editing: bool, state: State<'_, Arc<WindowCtlState>>) {
 #[cfg(windows)]
 fn is_fullscreen_application() -> bool {
     use windows::Win32::UI::Shell::{
-        SHQueryUserNotificationState, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN,
+        SHQueryUserNotificationState, QUNS_BUSY, QUNS_PRESENTATION_MODE,
+        QUNS_RUNNING_D3D_FULL_SCREEN,
     };
 
     unsafe {
         SHQueryUserNotificationState().is_ok_and(|state| {
-            state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_PRESENTATION_MODE
+            state == QUNS_BUSY
+                || state == QUNS_RUNNING_D3D_FULL_SCREEN
+                || state == QUNS_PRESENTATION_MODE
         })
     }
 }
