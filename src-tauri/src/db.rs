@@ -13,8 +13,8 @@ impl Db {
     pub fn new(app_data_dir: &Path) -> Result<Self, String> {
         let dir = app_data_dir.join("todoedge");
         fs::create_dir_all(&dir).map_err(|e| format!("创建数据目录失败：{e}"))?;
-        let conn = Connection::open(dir.join("todo.db"))
-            .map_err(|e| format!("打开数据库失败：{e}"))?;
+        let conn =
+            Connection::open(dir.join("todo.db")).map_err(|e| format!("打开数据库失败：{e}"))?;
         migrate(&conn)?;
         Ok(Db(Mutex::new(conn)))
     }
