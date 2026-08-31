@@ -114,22 +114,6 @@ fn windows_version() -> Option<(u32, u32, u32)> {
 }
 
 #[cfg(windows)]
-fn clear_tao_blur(window: &WebviewWindow) -> Result<(), String> {
-    use windows::Win32::Graphics::Dwm::{DwmEnableBlurBehindWindow, DWM_BB_ENABLE, DWM_BLURBEHIND};
-
-    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
-    let blur = DWM_BLURBEHIND {
-        dwFlags: DWM_BB_ENABLE,
-        fEnable: false.into(),
-        ..Default::default()
-    };
-    unsafe {
-        DwmEnableBlurBehindWindow(hwnd, &blur).map_err(|error| error.to_string())?;
-    }
-    Ok(())
-}
-
-#[cfg(windows)]
 fn mica_backdrop_is_active(window: &WebviewWindow) -> Result<bool, String> {
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_SYSTEMBACKDROP_TYPE};
 
@@ -151,9 +135,6 @@ fn mica_backdrop_is_active(window: &WebviewWindow) -> Result<bool, String> {
 fn apply_material(window: &WebviewWindow) {
     use window_vibrancy::{apply_acrylic, apply_mica, clear_acrylic, clear_mica};
 
-    if let Err(error) = clear_tao_blur(window) {
-        println!("关闭透明窗口初始 blur 失败：{error}");
-    }
     let version = windows_version();
     let mica_supported =
         version.is_some_and(|(major, minor, build)| major == 10 && minor == 0 && build >= 22621);
