@@ -94,77 +94,12 @@ fn configure_native_window(window: &WebviewWindow) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-fn windows_version() -> Option<(u32, u32, u32)> {
-    use windows::{
-        Wdk::System::SystemServices::RtlGetVersion,
-        Win32::System::SystemInformation::OSVERSIONINFOW,
-    };
-
-    let mut version = OSVERSIONINFOW {
-        dwOSVersionInfoSize: std::mem::size_of::<OSVERSIONINFOW>() as u32,
-        ..Default::default()
-    };
-    unsafe {
-        RtlGetVersion(&mut version).is_ok().then_some((
-            version.dwMajorVersion,
-            version.dwMinorVersion,
-            version.dwBuildNumber,
-        ))
-    }
-}
-
-#[cfg(windows)]
-fn acrylic_backdrop_is_active(window: &WebviewWindow) -> Result<bool, String> {
-    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_SYSTEMBACKDROP_TYPE};
-
-    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
-    let mut backdrop_type = 0i32;
-    unsafe {
-        DwmGetWindowAttribute(
-            hwnd,
-            DWMWA_SYSTEMBACKDROP_TYPE,
-            &mut backdrop_type as *mut _ as _,
-            std::mem::size_of::<i32>() as u32,
-        )
-        .map_err(|error| error.to_string())?;
-    }
-    // DWMSBT_TRANSIENTWINDOW = 3，系统亚克力材质
-    Ok(backdrop_type == 3)
-}
-
-#[cfg(windows)]
 fn apply_material(window: &WebviewWindow) {
-    use window_vibrancy::{apply_acrylic, clear_acrylic, clear_mica};
-
-    let version = windows_version();
-    let material = match apply_acrylic(window, None) {
-        Ok(()) => match acrylic_backdrop_is_active(window) {
-            Ok(true) => Some("acrylic"),
-            Ok(false) => {
-                println!("Acrylic 调用成功但 DWM 未确认亚克力 backdrop");
-                None
-            }
-            Err(error) => {
-                println!("读取 Acrylic backdrop 失败：{error}");
-                None
-            }
-        },
-        Err(error) => {
-            println!("Acrylic 应用失败：{error:?}");
-            None
-        }
-    };
-    let material = material.unwrap_or_else(|| {
-        let _ = clear_acrylic(window);
-        let _ = clear_mica(window);
-        "solid"
-    });
-
-    println!(
-        "窗口材质：Windows build {:?}，使用 {material}",
-        version.map(|(_, _, build)| build)
-    );
-    let script = format!("document.documentElement.dataset.material = {material:?};");
+    // 窗口带 WS_EX_NOACTIVATE 永不激活，而 DWM 的系统材质（Mica/Acrylic backdrop、
+    // SetWindowCompositionAttribute 的亚克力与模糊）在这种窗口上经实测都只渲染
+    // 纯色兜底、不会有真实模糊。因此不做任何系统材质，直接用 Tao 原生逐像素
+    // 透明 + 前端半透明 CSS 真实透出桌面；深浅主题由 prefers-color-scheme 负责。
+    let script = "document.documentElement.dataset.material = \"glass\";";
     let _ = window.eval(script);
 }
 

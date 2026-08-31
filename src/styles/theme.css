@@ -1,7 +1,7 @@
 :root {
   color-scheme: light;
 
-  --bg: rgba(244, 244, 244, 0.6);
+  --bg: rgba(244, 244, 244, 0.5);
   --fg: #1f2430;
   --muted: #5e6270;
   --border: rgba(72, 76, 88, 0.24);
@@ -29,7 +29,7 @@
   :root {
     color-scheme: dark;
 
-    --bg: rgba(32, 32, 32, 0.55);
+    --bg: rgba(32, 32, 32, 0.45);
     --fg: #f4f4f6;
     --muted: #b3b3bb;
     --border: rgba(255, 255, 255, 0.19);

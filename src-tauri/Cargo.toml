@@ -27,12 +27,8 @@ chrono = "0.4.45"
 tokio = { version = "1", features = ["macros", "time"] }
 windows = { version = "0.61.3", features = [
   "Win32_Foundation",
-  "Win32_Graphics_Dwm",
-  "Win32_System_SystemInformation",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
-  "Wdk_System_SystemServices",
 ] }
-window-vibrancy = "0.6.0"
 
