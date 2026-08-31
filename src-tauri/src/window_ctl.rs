@@ -176,10 +176,14 @@ pub fn set_panel_editing(editing: bool, state: State<'_, Arc<WindowCtlState>>) {
 
 #[cfg(windows)]
 fn is_fullscreen_application() -> bool {
-    use windows::Win32::UI::Shell::{SHQueryUserNotificationState, QUNS_RUNNING_D3D_FULL_SCREEN};
+    use windows::Win32::UI::Shell::{
+        SHQueryUserNotificationState, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN,
+    };
 
     unsafe {
-        SHQueryUserNotificationState().is_ok_and(|state| state == QUNS_RUNNING_D3D_FULL_SCREEN)
+        SHQueryUserNotificationState().is_ok_and(|state| {
+            state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_PRESENTATION_MODE
+        })
     }
 }
 
@@ -198,7 +202,8 @@ fn pointer_is_outside_window(window: &WebviewWindow) -> Result<bool, String> {
         },
     };
 
-    let button_down = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) < 0 };
+    let button_state = unsafe { GetAsyncKeyState(VK_LBUTTON.0 as i32) };
+    let button_down = button_state < 0 || button_state & 1 != 0;
     if !button_down {
         return Ok(false);
     }

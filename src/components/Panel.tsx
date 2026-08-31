@@ -27,6 +27,7 @@ export function Panel({
 }: PanelProps) {
   const panelRef = useRef<HTMLElement>(null);
   const collapseTimer = useRef<number | null>(null);
+  const isEditingRef = useRef(false);
   const [isEditing, setIsEditing] = useState(false);
   const pendingCount = tasks.filter((task) => !task.done).length;
 
@@ -57,11 +58,13 @@ export function Panel({
 
   function handleInputFocus() {
     clearCollapseTimer();
+    isEditingRef.current = true;
     setIsEditing(true);
     onEditingChange(true);
   }
 
   function handleInputBlur() {
+    isEditingRef.current = false;
     setIsEditing(false);
     onEditingChange(false);
   }
@@ -80,12 +83,21 @@ export function Panel({
       }
     }
 
+    function handleWindowBlur() {
+      if (isEditingRef.current) {
+        requestCollapse();
+      }
+    }
+
     document.addEventListener("pointerdown", handlePointerDown, true);
     document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("blur", handleWindowBlur);
     return () => {
       clearCollapseTimer();
       document.removeEventListener("pointerdown", handlePointerDown, true);
       document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("blur", handleWindowBlur);
+      isEditingRef.current = false;
       onEditingChange(false);
     };
   }, [onEditingChange]);
