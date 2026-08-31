@@ -17,6 +17,9 @@ interface PanelProps {
   onSetTestRemind: (id: number) => Promise<void>;
   onCollapse: () => void;
   onEditingChange: (editing: boolean) => void;
+  /** Toast「点主体」呼出时要求高亮的任务 id（M2-1） */
+  highlightTaskId: number | null;
+  onHighlightEnd: () => void;
 }
 
 export function Panel({
@@ -29,6 +32,8 @@ export function Panel({
   onSetTestRemind,
   onCollapse,
   onEditingChange,
+  highlightTaskId,
+  onHighlightEnd,
 }: PanelProps) {
   const panelRef = useRef<HTMLElement>(null);
   const collapseTimer = useRef<number | null>(null);
@@ -177,7 +182,9 @@ export function Panel({
         ) : null}
         {!isLoading && !error ? (
           <TaskList
+            highlightTaskId={highlightTaskId}
             now={now}
+            onHighlightEnd={onHighlightEnd}
             onDelete={onDelete}
             onSetTestRemind={onSetTestRemind}
             onToggle={onToggle}

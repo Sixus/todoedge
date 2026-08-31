@@ -7,9 +7,9 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
 use tauri::{AppHandle, Manager};
-use tauri_plugin_notification::NotificationExt;
 
 use crate::db::Db;
+use crate::toast::{self, ToastTask};
 
 /// 轮询间隔（docs/01 第 4.2 节：每 30s 查一次 SQLite）。
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
@@ -27,14 +27,24 @@ pub fn start(app: AppHandle) {
 struct DueTask {
     id: i64,
     title: String,
+    remind_at: DateTime<Utc>,
+}
+
+impl DueTask {
+    /// 过期分钟数：到点 1 分钟以上才在 Toast 正文显示「已过期 X 分钟」。
+    fn overdue_minutes(&self, now: DateTime<Utc>) -> Option<i64> {
+        let minutes = (now - self.remind_at).num_minutes();
+        (minutes >= 1).then_some(minutes)
+    }
 }
 
 /// 一轮调度：逐条给到期任务弹通知，弹完置 notified=1。
 fn run_once(app: &AppHandle) {
+    let now = Utc::now();
     let db = app.state::<Db>();
     let due = {
         let conn = db.0.lock().expect("数据库锁已损坏");
-        match due_tasks(&conn, Utc::now()) {
+        match due_tasks(&conn, now) {
             Ok(tasks) => tasks,
             Err(e) => {
                 eprintln!("查询到期任务失败：{e}");
@@ -43,17 +53,14 @@ fn run_once(app: &AppHandle) {
         }
     };
     for task in due {
-        // 过渡方案 tauri-plugin-notification，M2-1 整体替换为 WinRT 自写版。
-        // 插件的 show() 为发后即忘：内部吞掉展示失败，这里只挡 API 层错误。
-        if let Err(e) = app
-            .notification()
-            .builder()
-            .title("待办提醒")
-            .body(&task.title)
-            .show()
-        {
-            eprintln!("任务 {} 弹通知失败：{e}", task.id);
-        }
+        // 展示失败只在 toast 线程内记日志；这里照旧置 notified=1，
+        // 避免 30s 后对同一条任务反复失败（docs/01 第 4.1 节不重弹）
+        let overdue_minutes = task.overdue_minutes(now);
+        toast::show_toast(ToastTask {
+            id: task.id,
+            title: task.title,
+            overdue_minutes,
+        });
         let conn = db.0.lock().expect("数据库锁已损坏");
         if let Err(e) = conn.execute(
             "UPDATE tasks SET notified = 1 WHERE id = ?1",
@@ -91,7 +98,11 @@ fn due_tasks(conn: &Connection, now: DateTime<Utc>) -> Result<Vec<DueTask>, Stri
             .map_err(|e| e.to_string())?
             .into();
         if parsed <= now {
-            due.push(DueTask { id, title });
+            due.push(DueTask {
+                id,
+                title,
+                remind_at: parsed,
+            });
         }
     }
     Ok(due)

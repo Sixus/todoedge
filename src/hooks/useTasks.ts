@@ -66,6 +66,7 @@ export function useTasks() {
     tasks,
     isLoading,
     error,
+    reload,
     addTask,
     toggleTask,
     deleteTask,

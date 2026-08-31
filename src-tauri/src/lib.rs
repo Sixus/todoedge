@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod scheduler;
+mod toast;
 mod window_ctl;
 
 use std::sync::Arc;
@@ -11,7 +12,6 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // 数据库放 {app_data_dir}/todoedge/todo.db（docs/02 第 4.2 节）
             let data_dir = app.path().app_data_dir().expect("获取数据目录失败");
@@ -26,7 +26,8 @@ pub fn run() {
             window_ctl::start_fullscreen_monitor(main_window, window_state.clone());
             app.manage(window_state);
 
-            // 数据库已 manage 完才启动调度器（内部依赖该 State）
+            // 通知线程先于调度器启动（回调依赖 Db State；调度器会投递 Toast）
+            toast::start(app.handle().clone());
             scheduler::start(app.handle().clone());
             Ok(())
         })

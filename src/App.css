@@ -119,6 +119,12 @@ button {
   outline-offset: 1px;
 }
 
+/* Toast「点主体」呼出面板时对目标任务的临时高亮描边（M2-1，持续 2 秒） */
+.task-highlight {
+  box-shadow: 0 0 0 2px var(--check-bg);
+  background: var(--surface-hover);
+}
+
 /* 图标按钮（底栏 32px / 输入框内 24px 两档） */
 .icon-btn {
   display: flex;

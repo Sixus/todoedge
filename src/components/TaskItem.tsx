@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { Dayjs } from "dayjs";
 
 import { formatTaskTime, isOverdue } from "../lib/format";
@@ -7,17 +8,43 @@ import { CheckIcon, XIcon } from "./icons";
 interface TaskItemProps {
   task: Task;
   now: Dayjs;
+  highlighted: boolean;
+  onHighlightEnd: () => void;
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onSetTestRemind: (id: number) => Promise<void>;
 }
 
-export function TaskItem({ task, now, onToggle, onDelete, onSetTestRemind }: TaskItemProps) {
+export function TaskItem({
+  task,
+  now,
+  highlighted,
+  onHighlightEnd,
+  onToggle,
+  onDelete,
+  onSetTestRemind,
+}: TaskItemProps) {
   const overdue = !task.done && !!task.remindAt && isOverdue(task.remindAt, now);
   const timeText = task.remindAt ? formatTaskTime(task.remindAt, now) : null;
+  const itemRef = useRef<HTMLLIElement>(null);
+
+  // Toast「点主体」呼出面板：滚到可见并保留描边 2 秒（M2-1）
+  useEffect(() => {
+    if (!highlighted) {
+      return;
+    }
+    itemRef.current?.scrollIntoView({ block: "nearest" });
+    const timer = window.setTimeout(onHighlightEnd, 2000);
+    return () => window.clearTimeout(timer);
+  }, [highlighted, onHighlightEnd]);
 
   return (
-    <li className="group flex min-h-[44px] items-center gap-2 rounded-md px-1.5 transition-colors duration-150 hover:bg-[var(--surface-hover)]">
+    <li
+      className={`group flex min-h-[44px] items-center gap-2 rounded-md px-1.5 transition-colors duration-150 hover:bg-[var(--surface-hover)]${
+        highlighted ? " task-highlight" : ""
+      }`}
+      ref={itemRef}
+    >
       <label className="task-check" title={task.done ? "标记未完成" : "标记完成"}>
         <input
           aria-label={`标记任务「${task.title}」${task.done ? "未完成" : "已完成"}`}

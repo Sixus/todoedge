@@ -7,12 +7,22 @@ import { TaskItem } from "./TaskItem";
 interface TaskListProps {
   tasks: Task[];
   now: Dayjs;
+  highlightTaskId: number | null;
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onSetTestRemind: (id: number) => Promise<void>;
+  onHighlightEnd: () => void;
 }
 
-export function TaskList({ tasks, now, onToggle, onDelete, onSetTestRemind }: TaskListProps) {
+export function TaskList({
+  tasks,
+  now,
+  highlightTaskId,
+  onToggle,
+  onDelete,
+  onSetTestRemind,
+  onHighlightEnd,
+}: TaskListProps) {
   const sortedTasks = sortTasks(tasks, now);
 
   if (sortedTasks.length === 0) {
@@ -29,6 +39,8 @@ export function TaskList({ tasks, now, onToggle, onDelete, onSetTestRemind }: Ta
         <TaskItem
           key={task.id}
           now={now}
+          highlighted={task.id === highlightTaskId}
+          onHighlightEnd={onHighlightEnd}
           onDelete={onDelete}
           onSetTestRemind={onSetTestRemind}
           onToggle={onToggle}
