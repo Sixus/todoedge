@@ -93,6 +93,46 @@ fn configure_native_window(window: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn is_mica_supported() -> bool {
+    use windows::{
+        Wdk::System::SystemServices::RtlGetVersion,
+        Win32::System::SystemInformation::OSVERSIONINFOW,
+    };
+
+    let mut version = OSVERSIONINFOW {
+        dwOSVersionInfoSize: std::mem::size_of::<OSVERSIONINFOW>() as u32,
+        ..Default::default()
+    };
+    unsafe {
+        RtlGetVersion(&mut version).is_ok()
+            && version.dwMajorVersion == 10
+            && version.dwMinorVersion == 0
+            && version.dwBuildNumber >= 22621
+    }
+}
+
+#[cfg(windows)]
+fn apply_material(window: &WebviewWindow) {
+    use window_vibrancy::{apply_acrylic, apply_mica, clear_acrylic, clear_mica};
+
+    let material = if is_mica_supported() && apply_mica(window, None).is_ok() {
+        "mica"
+    } else if apply_acrylic(window, None).is_ok() {
+        "mica"
+    } else {
+        let _ = clear_mica(window);
+        let _ = clear_acrylic(window);
+        "solid"
+    };
+
+    let script = format!("document.documentElement.dataset.material = {material:?};");
+    let _ = window.eval(script);
+}
+
+#[cfg(not(windows))]
+fn apply_material(_: &WebviewWindow) {}
+
 #[cfg(not(windows))]
 fn configure_native_window(_: &WebviewWindow) -> Result<(), String> {
     Ok(())
@@ -134,6 +174,7 @@ fn set_mode(
 
 pub fn initialize(window: &WebviewWindow, state: &WindowCtlState) -> Result<(), String> {
     configure_native_window(window)?;
+    apply_material(window);
     window
         .set_always_on_top(true)
         .map_err(|error| error.to_string())?;
