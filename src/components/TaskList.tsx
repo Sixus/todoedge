@@ -6,9 +6,10 @@ interface TaskListProps {
   tasks: Task[];
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
+  onSetTestRemind: (id: number) => Promise<void>;
 }
 
-export function TaskList({ tasks, onToggle, onDelete }: TaskListProps) {
+export function TaskList({ tasks, onToggle, onDelete, onSetTestRemind }: TaskListProps) {
   const sortedTasks = sortTasks(tasks);
 
   if (sortedTasks.length === 0) {
@@ -18,7 +19,13 @@ export function TaskList({ tasks, onToggle, onDelete }: TaskListProps) {
   return (
     <ul className="task-list">
       {sortedTasks.map((task) => (
-        <TaskItem key={task.id} task={task} onToggle={onToggle} onDelete={onDelete} />
+        <TaskItem
+          key={task.id}
+          task={task}
+          onToggle={onToggle}
+          onDelete={onDelete}
+          onSetTestRemind={onSetTestRemind}
+        />
       ))}
     </ul>
   );

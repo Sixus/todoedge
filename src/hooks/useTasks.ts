@@ -30,8 +30,17 @@ export function useTasks() {
   }, [reload]);
 
   const addTask = useCallback(
-    async (title: string) => {
-      await api.addTask(title);
+    async (title: string, remindAt?: string | null) => {
+      await api.addTask(title, remindAt);
+      await reload();
+    },
+    [reload],
+  );
+
+  /** 改提醒时间；Rust 侧会同时重置 notified，让新时间重新进入调度 */
+  const setRemindAt = useCallback(
+    async (id: number, remindAt: string) => {
+      await api.updateTask(id, undefined, remindAt);
       await reload();
     },
     [reload],
@@ -53,5 +62,13 @@ export function useTasks() {
     [reload],
   );
 
-  return { tasks, isLoading, error, addTask, toggleTask, deleteTask };
+  return {
+    tasks,
+    isLoading,
+    error,
+    addTask,
+    toggleTask,
+    deleteTask,
+    setRemindAt,
+  };
 }

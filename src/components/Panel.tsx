@@ -11,6 +11,7 @@ interface PanelProps {
   onAdd: (title: string) => Promise<void>;
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
+  onSetTestRemind: (id: number) => Promise<void>;
   onCollapse: () => void;
   onEditingChange: (editing: boolean) => void;
 }
@@ -22,6 +23,7 @@ export function Panel({
   onAdd,
   onToggle,
   onDelete,
+  onSetTestRemind,
   onCollapse,
   onEditingChange,
 }: PanelProps) {
@@ -121,7 +123,12 @@ export function Panel({
         {isLoading ? <p className="empty-state">加载中…</p> : null}
         {!isLoading && error ? <p className="error-state">加载失败：{error}</p> : null}
         {!isLoading && !error ? (
-          <TaskList tasks={tasks} onDelete={onDelete} onToggle={onToggle} />
+          <TaskList
+            onDelete={onDelete}
+            onSetTestRemind={onSetTestRemind}
+            onToggle={onToggle}
+            tasks={tasks}
+          />
         ) : null}
       </section>
     </main>

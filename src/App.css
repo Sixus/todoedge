@@ -182,6 +182,30 @@ button {
   color: var(--fg);
 }
 
+/* 临时测试按钮：设 1 分钟后提醒（M2-3 移除） */
+.test-remind-button {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0;
+}
+
+.task-item:hover .test-remind-button,
+.test-remind-button:focus-visible {
+  opacity: 1;
+}
+
+.test-remind-button:hover {
+  color: var(--fg);
+}
+
 .empty-state,
 .error-state {
   margin: 32px 0;

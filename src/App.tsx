@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import dayjs from "dayjs";
 
 import { listen } from "@tauri-apps/api/event";
 
@@ -10,9 +11,16 @@ import { useTasks } from "./hooks/useTasks";
 import { api, type WindowMode } from "./lib/api";
 
 function App() {
-  const { tasks, isLoading, error, addTask, toggleTask, deleteTask } = useTasks();
+  const { tasks, isLoading, error, addTask, toggleTask, deleteTask, setRemindAt } =
+    useTasks();
   const [collapsed, setCollapsed] = useState(true);
   const isTransitioning = useRef(false);
+
+  // 临时测试入口：把任务提醒设到 1 分钟后（M2-3 换成自然语言解析 + 点选器后删除）
+  const setTestRemindInOneMinute = useCallback(
+    (id: number) => setRemindAt(id, dayjs().add(1, "minute").toISOString()),
+    [setRemindAt],
+  );
 
   const syncWindowMode = useCallback((mode: WindowMode) => {
     setCollapsed(mode === "collapsed");
@@ -70,6 +78,7 @@ function App() {
       onCollapse={() => void collapsePanel()}
       onDelete={deleteTask}
       onEditingChange={setPanelEditing}
+      onSetTestRemind={setTestRemindInOneMinute}
       onToggle={toggleTask}
       tasks={tasks}
     />
