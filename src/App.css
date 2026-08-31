@@ -125,6 +125,77 @@ button {
   background: var(--surface-hover);
 }
 
+/* 提醒时间选择弹层（M2-3，Win11 风格小卡片） */
+.picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+}
+
+.picker-card {
+  position: fixed;
+  right: 10px;
+  bottom: 48px;
+  z-index: 30;
+  width: 250px;
+  padding: 12px;
+  border: 1px solid var(--pop-border);
+  border-radius: 10px;
+  background: var(--pop-bg);
+  box-shadow: var(--pop-shadow);
+}
+
+.picker-input {
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  font-size: 13px;
+  color: var(--fg);
+  outline: none;
+  transition: border-color 120ms ease-out;
+}
+
+.picker-input:focus {
+  border-color: var(--input-focus);
+}
+
+.picker-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    color 120ms ease-out,
+    background-color 120ms ease-out;
+}
+
+.picker-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--fg);
+}
+
+.picker-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.picker-btn-primary {
+  background: var(--check-bg);
+  color: var(--check-fg);
+}
+
+.picker-btn-primary:hover:not(:disabled) {
+  background: var(--check-bg);
+  color: var(--check-fg);
+  opacity: 0.92;
+}
+
 /* 图标按钮（底栏 32px / 输入框内 24px 两档） */
 .icon-btn {
   display: flex;

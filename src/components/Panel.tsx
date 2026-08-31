@@ -11,10 +11,11 @@ interface PanelProps {
   tasks: Task[];
   isLoading: boolean;
   error: string | null;
-  onAdd: (title: string) => Promise<void>;
+  onAdd: (title: string, remindAt?: string | null) => Promise<void>;
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
-  onSetTestRemind: (id: number) => Promise<void>;
+  /** 设定/改期（ISO）或清除（null）提醒时间（M2-3 选择器） */
+  onSetRemindAt: (id: number, remindAt: string | null) => Promise<void>;
   onCollapse: () => void;
   onEditingChange: (editing: boolean) => void;
   /** Toast「点主体」呼出时要求高亮的任务 id（M2-1） */
@@ -29,7 +30,7 @@ export function Panel({
   onAdd,
   onToggle,
   onDelete,
-  onSetTestRemind,
+  onSetRemindAt,
   onCollapse,
   onEditingChange,
   highlightTaskId,
@@ -186,7 +187,7 @@ export function Panel({
             now={now}
             onHighlightEnd={onHighlightEnd}
             onDelete={onDelete}
-            onSetTestRemind={onSetTestRemind}
+            onSetRemindAt={onSetRemindAt}
             onToggle={onToggle}
             tasks={tasks}
           />

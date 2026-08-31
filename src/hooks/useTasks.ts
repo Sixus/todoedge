@@ -37,10 +37,14 @@ export function useTasks() {
     [reload],
   );
 
-  /** 改提醒时间；Rust 侧会同时重置 notified，让新时间重新进入调度 */
+  /** 设定/改期（ISO）；null = 清除提醒。Rust 侧会同时重置 notified，让新时间重新进入调度 */
   const setRemindAt = useCallback(
-    async (id: number, remindAt: string) => {
-      await api.updateTask(id, undefined, remindAt);
+    async (id: number, remindAt: string | null) => {
+      if (remindAt) {
+        await api.updateTask(id, undefined, remindAt);
+      } else {
+        await api.clearReminder(id);
+      }
       await reload();
     },
     [reload],

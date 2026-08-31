@@ -24,6 +24,8 @@ export const api = {
   /** 只更新传入的字段，其余保持不变（M2 改期用） */
   updateTask: (id: number, title?: string, remindAt?: string | null) =>
     invoke<Task>("update_task", { id, title, remindAt }),
+  /** 清除提醒时间（M2-3 选择器「清除提醒」） */
+  clearReminder: (id: number) => invoke<Task>("clear_reminder", { id }),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: string) =>
     invoke<void>("set_setting", { key, value }),

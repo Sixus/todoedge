@@ -32,6 +32,11 @@
   /* 收起细条 */
   --strip-bg: rgb(255 255 255 / 58%);
   --strip-opacity: 0.58;
+
+  /* 提醒时间选择弹层（M2-3，实体小卡片保证可读性） */
+  --pop-bg: #ffffff;
+  --pop-border: rgba(0, 0, 0, 0.1);
+  --pop-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
 }
 
 :root[data-material="solid"] {
@@ -67,6 +72,11 @@
     --check-fg: #ffffff;
     --done-fg: #999999;
     --danger: #e96975;
+
+    /* 提醒时间选择弹层（M2-3，实体小卡片保证可读性） */
+    --pop-bg: #2c2c2c;
+    --pop-border: rgba(255, 255, 255, 0.12);
+    --pop-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
   }
 
   :root[data-material="solid"] {

@@ -138,6 +138,18 @@ pub fn update_task(
     task_by_id(&conn, id)
 }
 
+/// 清除提醒时间（M2-3 选择器「清除提醒」入口）。
+#[tauri::command]
+pub fn clear_reminder(db: State<Db>, id: i64) -> Result<Task, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE tasks SET remind_at = NULL WHERE id = ?1",
+        params![id],
+    )
+    .map_err(|e| e.to_string())?;
+    task_by_id(&conn, id)
+}
+
 #[tauri::command]
 pub fn get_setting(db: State<Db>, key: String) -> Result<Option<String>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;

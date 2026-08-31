@@ -10,7 +10,7 @@ interface TaskListProps {
   highlightTaskId: number | null;
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
-  onSetTestRemind: (id: number) => Promise<void>;
+  onSetRemindAt: (id: number, remindAt: string | null) => Promise<void>;
   onHighlightEnd: () => void;
 }
 
@@ -20,7 +20,7 @@ export function TaskList({
   highlightTaskId,
   onToggle,
   onDelete,
-  onSetTestRemind,
+  onSetRemindAt,
   onHighlightEnd,
 }: TaskListProps) {
   const sortedTasks = sortTasks(tasks, now);
@@ -42,7 +42,7 @@ export function TaskList({
           highlighted={task.id === highlightTaskId}
           onHighlightEnd={onHighlightEnd}
           onDelete={onDelete}
-          onSetTestRemind={onSetTestRemind}
+          onSetRemindAt={onSetRemindAt}
           onToggle={onToggle}
           task={task}
         />

@@ -20,6 +20,20 @@ export function formatTaskTime(remindAt: string, now: Dayjs): string {
   return remind.format("M月D日 HH:mm");
 }
 
+/** 输入框预览用：近几天用相对日词（今天/明天/后天/大后天），更远带日期。 */
+export function formatReminderPreview(time: Dayjs, now: Dayjs): string {
+  const relative = ["今天", "明天", "后天", "大后天"].find((_, index) =>
+    time.isSame(now.add(index, "day"), "day"),
+  );
+  if (relative) {
+    return `${relative} ${time.format("HH:mm")}`;
+  }
+  if (time.isSame(now, "year")) {
+    return time.format("M月D日 HH:mm");
+  }
+  return time.format("YYYY年M月D日 HH:mm");
+}
+
 /** 过期 = 提醒时间已过且未完成（01 文档 5.2 节） */
 export function isOverdue(remindAt: string, now: Dayjs): boolean {
   return dayjs(remindAt).isBefore(now);
