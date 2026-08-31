@@ -19,7 +19,8 @@
         "shadow": false,
         "resizable": false,
         "skipTaskbar": true,
-        "transparent": true
+        "transparent": true,
+        "visible": false
       }
     ],
     "security": {

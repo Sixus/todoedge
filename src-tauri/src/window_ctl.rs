@@ -94,7 +94,7 @@ fn configure_native_window(window: &WebviewWindow) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-fn is_mica_supported() -> bool {
+fn windows_version() -> Option<(u32, u32, u32)> {
     use windows::{
         Wdk::System::SystemServices::RtlGetVersion,
         Win32::System::SystemInformation::OSVERSIONINFOW,
@@ -105,27 +105,96 @@ fn is_mica_supported() -> bool {
         ..Default::default()
     };
     unsafe {
-        RtlGetVersion(&mut version).is_ok()
-            && version.dwMajorVersion == 10
-            && version.dwMinorVersion == 0
-            && version.dwBuildNumber >= 22621
+        RtlGetVersion(&mut version).is_ok().then_some((
+            version.dwMajorVersion,
+            version.dwMinorVersion,
+            version.dwBuildNumber,
+        ))
     }
+}
+
+#[cfg(windows)]
+fn clear_tao_blur(window: &WebviewWindow) -> Result<(), String> {
+    use windows::Win32::Graphics::Dwm::{DwmEnableBlurBehindWindow, DWM_BB_ENABLE, DWM_BLURBEHIND};
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let blur = DWM_BLURBEHIND {
+        dwFlags: DWM_BB_ENABLE,
+        fEnable: false.into(),
+        ..Default::default()
+    };
+    unsafe {
+        DwmEnableBlurBehindWindow(hwnd, &blur).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn mica_backdrop_is_active(window: &WebviewWindow) -> Result<bool, String> {
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_SYSTEMBACKDROP_TYPE};
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let mut backdrop_type = 0i32;
+    unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_SYSTEMBACKDROP_TYPE,
+            &mut backdrop_type as *mut _ as _,
+            std::mem::size_of::<i32>() as u32,
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    Ok(backdrop_type == 2)
 }
 
 #[cfg(windows)]
 fn apply_material(window: &WebviewWindow) {
     use window_vibrancy::{apply_acrylic, apply_mica, clear_acrylic, clear_mica};
 
-    let material = if is_mica_supported() && apply_mica(window, None).is_ok() {
-        "mica"
-    } else if apply_acrylic(window, None).is_ok() {
-        "mica"
+    if let Err(error) = clear_tao_blur(window) {
+        println!("关闭透明窗口初始 blur 失败：{error}");
+    }
+    let version = windows_version();
+    let mica_supported =
+        version.is_some_and(|(major, minor, build)| major == 10 && minor == 0 && build >= 22621);
+    let material = if mica_supported {
+        match apply_mica(window, None) {
+            Ok(()) => match mica_backdrop_is_active(window) {
+                Ok(true) => Some("mica"),
+                Ok(false) => {
+                    println!("Mica 调用成功但 DWM 未确认云母 backdrop");
+                    None
+                }
+                Err(error) => {
+                    println!("读取 Mica backdrop 失败：{error}");
+                    None
+                }
+            },
+            Err(error) => {
+                println!("Mica 应用失败：{error:?}");
+                None
+            }
+        }
     } else {
-        let _ = clear_mica(window);
-        let _ = clear_acrylic(window);
-        "solid"
+        None
     };
+    let material = material.or_else(|| match apply_acrylic(window, None) {
+        Ok(()) => Some("acrylic"),
+        Err(error) => {
+            println!("Acrylic 应用失败：{error:?}");
+            None
+        }
+    });
+    let material = material.unwrap_or_else(|| {
+        let _ = clear_acrylic(window);
+        let _ = clear_mica(window);
+        "solid"
+    });
 
+    println!(
+        "窗口材质：Windows build {:?}，使用 {material}",
+        version.map(|(_, _, build)| build)
+    );
     let script = format!("document.documentElement.dataset.material = {material:?};");
     let _ = window.eval(script);
 }
@@ -161,6 +230,7 @@ fn set_mode(
     should_show: bool,
 ) -> Result<WindowMode, String> {
     apply_geometry(window, mode)?;
+    apply_material(window);
     *state.mode.lock().map_err(|_| "窗口状态已损坏")? = mode;
     window
         .emit("window-mode-changed", mode)
@@ -174,11 +244,11 @@ fn set_mode(
 
 pub fn initialize(window: &WebviewWindow, state: &WindowCtlState) -> Result<(), String> {
     configure_native_window(window)?;
-    apply_material(window);
     window
         .set_always_on_top(true)
         .map_err(|error| error.to_string())?;
-    set_mode(window, state, WindowMode::Collapsed, true)?;
+    set_mode(window, state, WindowMode::Collapsed, false)?;
+    show_without_activation(window)?;
     Ok(())
 }
 
