@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import dayjs from "dayjs";
 
 import type { Task } from "../lib/api";
+import { formatOverviewDate } from "../lib/format";
+import { CompletedIcon, SettingsIcon } from "./icons";
 import { TaskInput } from "./TaskInput";
 import { TaskList } from "./TaskList";
 
@@ -31,6 +34,26 @@ export function Panel({
   const collapseTimer = useRef<number | null>(null);
   const isEditingRef = useRef(false);
   const [isEditing, setIsEditing] = useState(false);
+
+  const now = useMemo(() => dayjs(), []);
+  // 概览计数（01 文档 5.2 节）：过期 = 提醒已过且未完成；今日 = 提醒在今天且未完成
+  const { overdueCount, todayCount } = useMemo(() => {
+    let overdue = 0;
+    let today = 0;
+    for (const task of tasks) {
+      if (task.done || !task.remindAt) {
+        continue;
+      }
+      const remind = dayjs(task.remindAt);
+      if (remind.isBefore(now)) {
+        overdue += 1;
+      }
+      if (remind.isSame(now, "day")) {
+        today += 1;
+      }
+    }
+    return { overdueCount: overdue, todayCount: today };
+  }, [tasks, now]);
   const pendingCount = tasks.filter((task) => !task.done).length;
 
   function clearCollapseTimer() {
@@ -106,24 +129,55 @@ export function Panel({
 
   return (
     <main
-      className="panel-shell"
+      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)] text-[color:var(--fg)] outline-none"
       onMouseEnter={clearCollapseTimer}
       onMouseLeave={handleMouseLeave}
       ref={panelRef}
       tabIndex={-1}
     >
-      <header className="app-header">
-        <h1>TodoEdge</h1>
-        <p>未完成 {pendingCount}</p>
+      {/* ① 概览区 */}
+      <header className="flex items-baseline justify-between gap-2 pb-2 pl-5 pr-5 pt-4">
+        <h1 className="text-xl font-semibold leading-7">
+          {formatOverviewDate(now)}
+        </h1>
+        <p className="flex shrink-0 items-baseline text-xs leading-4">
+          <span
+            className={
+              overdueCount > 0
+                ? "font-semibold text-[color:var(--danger)]"
+                : "text-[color:var(--fg-muted)]"
+            }
+          >
+            过期 {overdueCount}
+          </span>
+          <span aria-hidden className="px-1 text-[color:var(--fg-faint)]">
+            ·
+          </span>
+          <span className="text-[color:var(--fg-muted)]">今日 {todayCount}</span>
+        </p>
       </header>
 
-      <TaskInput onAdd={onAdd} onBlur={handleInputBlur} onFocus={handleInputFocus} />
+      {/* ② 新建任务区 */}
+      <div className="px-5 pb-2.5">
+        <TaskInput onAdd={onAdd} onBlur={handleInputBlur} onFocus={handleInputFocus} />
+      </div>
 
-      <section aria-label="任务清单" className="task-list-section">
-        {isLoading ? <p className="empty-state">加载中…</p> : null}
-        {!isLoading && error ? <p className="error-state">加载失败：{error}</p> : null}
+      {/* ③ 任务清单区 */}
+      <section
+        aria-label="任务清单"
+        className="task-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-2"
+      >
+        {isLoading ? (
+          <p className="mt-10 text-center text-[13px] text-[color:var(--fg-muted)]">加载中…</p>
+        ) : null}
+        {!isLoading && error ? (
+          <p className="mt-10 text-center text-[13px] text-[color:var(--danger)]">
+            加载失败：{error}
+          </p>
+        ) : null}
         {!isLoading && !error ? (
           <TaskList
+            now={now}
             onDelete={onDelete}
             onSetTestRemind={onSetTestRemind}
             onToggle={onToggle}
@@ -131,6 +185,29 @@ export function Panel({
           />
         ) : null}
       </section>
+
+      {/* ④ 底栏（已完成/设置为占位：M3-1 周报视图、M2-4 设置小窗） */}
+      <footer className="flex items-center justify-between border-t border-[var(--border-subtle)] py-1.5 pl-5 pr-2.5">
+        <span className="text-xs text-[color:var(--fg-muted)]">未完成 {pendingCount}</span>
+        <div className="flex items-center">
+          <button
+            aria-label="已完成"
+            className="icon-btn"
+            title="已完成（即将推出）"
+            type="button"
+          >
+            <CompletedIcon className="h-[18px] w-[18px]" />
+          </button>
+          <button
+            aria-label="设置"
+            className="icon-btn"
+            title="设置（即将推出）"
+            type="button"
+          >
+            <SettingsIcon className="h-[18px] w-[18px]" />
+          </button>
+        </div>
+      </footer>
     </main>
   );
 }

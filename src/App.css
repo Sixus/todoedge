@@ -35,6 +35,7 @@ button {
   color: inherit;
 }
 
+/* 收起态细条 */
 .edge-strip {
   width: 6px;
   height: 100%;
@@ -49,174 +50,103 @@ button {
   opacity: 0.94;
 }
 
-.panel-shell {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  padding: 24px;
-  background: var(--bg);
-  outline: none;
+/* 清单区滚动条：细化、透明轨道 */
+.task-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
-.app-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 16px;
+.task-scroll::-webkit-scrollbar {
+  width: 6px;
 }
 
-.app-header h1 {
+.task-scroll::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+}
+
+.task-scroll::-webkit-scrollbar-track,
+.task-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 圆形勾选框（原生 checkbox 铺满透明承载，视觉由 .check-circle 呈现） */
+.task-check {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.task-check input {
+  position: absolute;
+  inset: 0;
   margin: 0;
-  font-size: 20px;
-  font-weight: 600;
+  opacity: 0;
+  cursor: pointer;
 }
 
-.app-header p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 14px;
-}
-
-.task-input {
-  padding: 16px 0;
-}
-
-.task-input input {
-  display: block;
-  width: 100%;
-  border: 1px solid var(--input-border);
-  border-radius: 2px;
-  padding: 10px 12px;
-  outline: none;
-  color: var(--fg);
-  background: var(--input-bg);
-}
-
-.task-input input:focus {
-  border-color: var(--input-focus);
-}
-
-.task-input input:disabled {
-  background: var(--disabled-bg);
-}
-
-.task-list-section {
-  min-height: 0;
-  flex: 1;
-  overflow-y: auto;
-}
-
-.task-list {
+.check-circle {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--checkbox-border);
+  border-radius: 999px;
+  color: var(--check-fg);
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out;
 }
 
-.task-item {
+.check-circle svg {
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.task-check input:checked + .check-circle {
+  background: var(--check-bg);
+  border-color: var(--check-bg);
+}
+
+.task-check input:checked + .check-circle svg {
+  opacity: 1;
+}
+
+.task-check input:focus-visible + .check-circle {
+  outline: 2px solid var(--check-bg);
+  outline-offset: 1px;
+}
+
+/* 图标按钮（底栏 32px / 输入框内 24px 两档） */
+.icon-btn {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  min-height: 42px;
-  gap: 12px;
-  padding: 6px 4px;
-  border-bottom: 1px solid var(--border-subtle);
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    color 120ms ease-out,
+    background-color 120ms ease-out;
 }
 
-.task-item:hover {
+.icon-btn-sm {
+  width: 24px;
+  height: 24px;
+}
+
+.icon-btn:hover:not(:disabled) {
+  color: var(--fg);
   background: var(--surface-hover);
 }
 
-.task-label {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  flex: 1;
-  gap: 10px;
-  cursor: pointer;
-}
-
-.task-label input {
-  flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-.task-label span {
-  overflow-wrap: anywhere;
-  line-height: 1.4;
-}
-
-.task-item.is-done .task-label span {
-  color: var(--done-fg);
-  text-decoration: line-through;
-}
-
-.delete-button {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 22px;
-  line-height: 1;
-  opacity: 0;
-}
-
-.task-item:hover .delete-button,
-.delete-button:focus-visible {
-  opacity: 1;
-}
-
-.delete-button:hover {
-  color: var(--fg);
-}
-
-/* 临时测试按钮：设 1 分钟后提醒（M2-3 移除） */
-.test-remind-button {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 15px;
-  line-height: 1;
-  opacity: 0;
-}
-
-.task-item:hover .test-remind-button,
-.test-remind-button:focus-visible {
-  opacity: 1;
-}
-
-.test-remind-button:hover {
-  color: var(--fg);
-}
-
-.empty-state,
-.error-state {
-  margin: 32px 0;
-  text-align: center;
-  font-size: 14px;
-}
-
-.empty-state {
-  color: var(--muted);
-}
-
-.error-state {
-  color: var(--danger);
+.icon-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
 }

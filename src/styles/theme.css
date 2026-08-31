@@ -1,26 +1,42 @@
+/*
+ * 外观系统变量：深浅（跟随系统）× 透明/实体（html[data-material="solid"]）
+ * 共 4 组。见 docs/01-产品方案框架-v1.md 第 7 节。
+ * 色值取自 docs/design/panel-dark.png / panel-light.png 视觉基准（Fluent 配色）。
+ */
 :root {
   color-scheme: light;
 
+  /* 面板容器 */
   --bg: rgba(244, 244, 244, 0.5);
-  --fg: #1f2430;
-  --muted: #5e6270;
-  --border: rgba(72, 76, 88, 0.24);
-  --border-subtle: rgba(72, 76, 88, 0.14);
-  --surface-hover: rgba(255, 255, 255, 0.42);
-  --input-bg: rgba(255, 255, 255, 0.38);
-  --input-border: rgba(72, 76, 88, 0.36);
-  --input-focus: #1f2430;
+  --fg: #242424;
+  --fg-muted: #616161;
+  --fg-faint: #707070;
+  --border: rgba(0, 0, 0, 0.09);
+  --border-subtle: rgba(0, 0, 0, 0.12);
+  --surface-hover: rgba(255, 255, 255, 0.45);
+  --scrollbar-thumb: rgba(0, 0, 0, 0.2);
+
+  /* 新建任务输入框 */
+  --input-bg: rgba(255, 255, 255, 0.72);
+  --input-border: rgba(0, 0, 0, 0.3);
+  --input-focus: #0f6cbd;
   --disabled-bg: rgba(220, 220, 224, 0.58);
-  --accent: #1f2430;
-  --done-fg: #767985;
-  --danger: #a33232;
+
+  /* 任务行 */
+  --checkbox-border: #707070;
+  --check-bg: #0f6cbd;
+  --check-fg: #ffffff;
+  --done-fg: #707070;
+  --danger: #b10e1c;
+
+  /* 收起细条 */
   --strip-bg: rgb(255 255 255 / 58%);
   --strip-opacity: 0.58;
 }
 
 :root[data-material="solid"] {
   --bg: #f4f4f4;
-  --surface-hover: #e9e9ec;
+  --surface-hover: #ececec;
   --input-bg: #ffffff;
   --disabled-bg: #e2e2e5;
 }
@@ -29,25 +45,34 @@
   :root {
     color-scheme: dark;
 
+    /* 面板容器 */
     --bg: rgba(32, 32, 32, 0.45);
-    --fg: #f4f4f6;
-    --muted: #b3b3bb;
-    --border: rgba(255, 255, 255, 0.19);
-    --border-subtle: rgba(255, 255, 255, 0.12);
+    --fg: #ffffff;
+    --fg-muted: #adadad;
+    --fg-faint: #999999;
+    --border: rgba(255, 255, 255, 0.16);
+    --border-subtle: rgba(255, 255, 255, 0.1);
     --surface-hover: rgba(255, 255, 255, 0.08);
-    --input-bg: rgba(0, 0, 0, 0.18);
-    --input-border: rgba(255, 255, 255, 0.28);
-    --input-focus: #ffffff;
+    --scrollbar-thumb: rgba(255, 255, 255, 0.2);
+
+    /* 新建任务输入框 */
+    --input-bg: rgba(0, 0, 0, 0.22);
+    --input-border: rgba(255, 255, 255, 0.36);
+    --input-focus: #479ef5;
     --disabled-bg: rgba(0, 0, 0, 0.22);
-    --accent: #ffffff;
-    --done-fg: #92929b;
-    --danger: #ff9b9b;
+
+    /* 任务行 */
+    --checkbox-border: #adadad;
+    --check-bg: #2899f5;
+    --check-fg: #ffffff;
+    --done-fg: #999999;
+    --danger: #e96975;
   }
 
   :root[data-material="solid"] {
     --bg: #202020;
     --surface-hover: #2c2c2c;
-    --input-bg: #292929;
+    --input-bg: #333333;
     --disabled-bg: #2a2a2a;
   }
 }
