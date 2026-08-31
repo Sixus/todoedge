@@ -37,19 +37,7 @@ export function useTasks() {
     [reload],
   );
 
-  /** 设定/改期（ISO）；null = 清除提醒。Rust 侧会同时重置 notified，让新时间重新进入调度 */
-  const setRemindAt = useCallback(
-    async (id: number, remindAt: string | null) => {
-      if (remindAt) {
-        await api.updateTask(id, undefined, remindAt);
-      } else {
-        await api.clearReminder(id);
-      }
-      await reload();
-    },
-    [reload],
-  );
-
+  /** 编辑任务：标题 + 提醒时间（null = 清除提醒）。改期会重置 notified 重新进入调度 */
   const toggleTask = useCallback(
     async (id: number) => {
       await api.toggleTask(id);
@@ -66,6 +54,29 @@ export function useTasks() {
     [reload],
   );
 
+  /** 编辑任务：标题 + 提醒时间（null = 清除提醒）。改期会重置 notified 重新进入调度 */
+  const editTask = useCallback(
+    async (id: number, title: string, remindAt: string | null) => {
+      if (remindAt) {
+        await api.updateTask(id, title, remindAt);
+      } else {
+        await api.updateTask(id, title);
+        await api.clearReminder(id);
+      }
+      await reload();
+    },
+    [reload],
+  );
+
+  /** 拖拽排序落定：按新顺序持久化 sort_order */
+  const reorderTasks = useCallback(
+    async (orderedIds: number[]) => {
+      await api.reorderTasks(orderedIds);
+      await reload();
+    },
+    [reload],
+  );
+
   return {
     tasks,
     isLoading,
@@ -74,6 +85,7 @@ export function useTasks() {
     addTask,
     toggleTask,
     deleteTask,
-    setRemindAt,
+    editTask,
+    reorderTasks,
   };
 }

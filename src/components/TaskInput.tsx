@@ -1,7 +1,7 @@
 import { FormEvent, KeyboardEvent, useMemo, useState } from "react";
 import dayjs from "dayjs";
 
-import { formatReminderPreview } from "../lib/format";
+import { formatInlineReminder } from "../lib/format";
 import { parseReminder, stripReminderText } from "../lib/parseTime";
 import { ClockIcon, PlusIcon } from "./icons";
 import { ReminderPicker } from "./ReminderPicker";
@@ -22,10 +22,11 @@ export function TaskInput({ onAdd, onFocus, onBlur }: TaskInputProps) {
   );
 
   const parsed = useMemo(() => parseReminder(title), [title]);
-  const preview = pickedRemindAt
-    ? formatReminderPreview(dayjs(pickedRemindAt), dayjs())
+  // 识别到的时间 / 选择器设定的时间：内联替换闹钟按钮位置
+  const inlineTime = pickedRemindAt
+    ? dayjs(pickedRemindAt)
     : parsed
-      ? formatReminderPreview(parsed.time, dayjs())
+      ? parsed.time
       : null;
 
   async function submit() {
@@ -68,11 +69,11 @@ export function TaskInput({ onAdd, onFocus, onBlur }: TaskInputProps) {
 
   return (
     <form onSubmit={handleSubmit}>
-      {/* 输入框行：按钮锚在这一行，不受下方预览行影响 */}
+      {/* 输入框行：右侧按钮锚在这一行 */}
       <div className="relative">
         <input
           aria-label="新建任务"
-          className="h-8 w-full rounded-lg border border-[var(--input-border)] bg-[var(--input-bg)] pl-3 pr-[58px] text-[13px] text-[color:var(--fg)] outline-none transition-colors duration-150 placeholder:text-[color:var(--fg-faint)] focus:border-[var(--input-focus)] disabled:bg-[var(--disabled-bg)]"
+          className="h-8 w-full rounded-lg border border-[var(--input-border)] bg-[var(--input-bg)] pl-3 pr-[76px] text-[13px] text-[color:var(--fg)] outline-none transition-colors duration-150 placeholder:text-[11px] placeholder:text-[color:var(--fg-faint)] focus:border-[var(--input-focus)] disabled:bg-[var(--disabled-bg)]"
           disabled={isAdding}
           onBlur={onBlur}
           onChange={(event) => setTitle(event.target.value)}
@@ -83,18 +84,33 @@ export function TaskInput({ onAdd, onFocus, onBlur }: TaskInputProps) {
           value={title}
         />
         <div className="absolute right-[4px] top-1/2 flex -translate-y-1/2 items-center">
-          <button
-            aria-label="设置提醒时间"
-            className="icon-btn icon-btn-sm"
-            onClick={(event) => {
-              const rect = event.currentTarget.getBoundingClientRect();
-              setPickerAnchor({ top: rect.bottom + 4, right: rect.right });
-            }}
-            title="设置提醒时间"
-            type="button"
-          >
-            <ClockIcon className="h-4 w-4" />
-          </button>
+          {inlineTime ? (
+            <button
+              aria-label={`修改提醒时间（当前 ${formatInlineReminder(inlineTime, dayjs())}）`}
+              className="inline-reminder"
+              onClick={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                setPickerAnchor({ top: rect.bottom + 4, right: rect.right });
+              }}
+              title="修改提醒时间"
+              type="button"
+            >
+              {formatInlineReminder(inlineTime, dayjs())}
+            </button>
+          ) : (
+            <button
+              aria-label="设置提醒时间"
+              className="icon-btn icon-btn-sm"
+              onClick={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                setPickerAnchor({ top: rect.bottom + 4, right: rect.right });
+              }}
+              title="设置提醒时间"
+              type="button"
+            >
+              <ClockIcon className="h-4 w-4" />
+            </button>
+          )}
           <button
             aria-label="添加任务"
             className="icon-btn icon-btn-sm"
@@ -105,18 +121,12 @@ export function TaskInput({ onAdd, onFocus, onBlur }: TaskInputProps) {
           </button>
         </div>
       </div>
-      {/* 实时预览：解析失败且未用选择器设定时不显示 */}
-      {preview ? (
-        <p className="truncate pt-1 text-[11px] leading-4 text-[color:var(--fg-muted)]">
-          将提醒：{preview}
-        </p>
-      ) : null}
       {pickerAnchor ? (
         <ReminderPicker
           anchor={pickerAnchor}
           initial={pickedRemindAt}
           onCancel={() => setPickerAnchor(null)}
-          onConfirm={(remindAt) => {
+          onConfirm={({ remindAt }) => {
             setPickedRemindAt(remindAt);
             setPickerAnchor(null);
           }}

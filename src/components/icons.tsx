@@ -65,12 +65,34 @@ export function CheckIcon({ className }: IconProps) {
   );
 }
 
-/** 行尾删除 ×（hover 出现） */
+/** 行尾删除 ×（hover 出现；点击后变红色垃圾桶做二次确认） */
 export function XIcon({ className }: IconProps) {
   return (
     <svg {...base(className)}>
       <line x1="6" y1="6" x2="18" y2="18" />
       <line x1="18" y1="6" x2="6" y2="18" />
+    </svg>
+  );
+}
+
+/** 删除二次确认状态的红色垃圾桶 */
+export function TrashIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M4 7h16" />
+      <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+      <path d="m6 7 1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
+  );
+}
+
+/** 行内编辑任务（标题 + 提醒时间） */
+export function EditIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M17 3.5a2.6 2.6 0 0 1 3.7 3.7L7.5 20.4 2.5 21.8l1.4-5L17 3.5Z" />
     </svg>
   );
 }

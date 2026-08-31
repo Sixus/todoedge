@@ -150,6 +150,23 @@ pub fn clear_reminder(db: State<Db>, id: i64) -> Result<Task, String> {
     task_by_id(&conn, id)
 }
 
+/// 拖拽排序：按传入顺序写入 sort_order（1..n）。前端按「待办在前、已完成在后」
+/// 提交全量 id，两个分区的相对顺序即最终显示顺序（docs/05 用户反馈：分区互不越界）。
+#[tauri::command]
+pub fn reorder_tasks(db: State<Db>, ids: Vec<i64>) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    for (index, id) in ids.iter().enumerate() {
+        tx.execute(
+            "UPDATE tasks SET sort_order = ?2 WHERE id = ?1",
+            params![id, (index + 1) as i64],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_setting(db: State<Db>, key: String) -> Result<Option<String>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;

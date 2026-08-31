@@ -26,6 +26,8 @@ export const api = {
     invoke<Task>("update_task", { id, title, remindAt }),
   /** 清除提醒时间（M2-3 选择器「清除提醒」） */
   clearReminder: (id: number) => invoke<Task>("clear_reminder", { id }),
+  /** 拖拽排序：按新顺序写入 sort_order */
+  reorderTasks: (ids: number[]) => invoke<void>("reorder_tasks", { ids }),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: string) =>
     invoke<void>("set_setting", { key, value }),

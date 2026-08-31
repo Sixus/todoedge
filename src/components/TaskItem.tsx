@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import type { DragEvent, MouseEvent } from "react";
 import type { Dayjs } from "dayjs";
 
 import { formatTaskTime, isOverdue } from "../lib/format";
 import type { Task } from "../lib/api";
-import { CheckIcon, ClockIcon, XIcon } from "./icons";
+import { CheckIcon, EditIcon, TrashIcon, XIcon } from "./icons";
 import { ReminderPicker } from "./ReminderPicker";
 
 interface TaskItemProps {
@@ -13,8 +14,15 @@ interface TaskItemProps {
   onHighlightEnd: () => void;
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
-  /** 设定/改期（ISO）或清除（null）提醒时间 */
-  onSetRemindAt: (id: number, remindAt: string | null) => Promise<void>;
+  /** 编辑任务标题 + 提醒时间（null = 清除提醒） */
+  onEditTask: (id: number, title: string, remindAt: string | null) => Promise<void>;
+  /** 拖拽排序（由 TaskList 编排，跨分区拖放在上层被忽略） */
+  onDragStartItem: (id: number) => void;
+  onDragOverItem: (id: number, done: boolean, event: DragEvent<HTMLLIElement>) => void;
+  onDropItem: (id: number, done: boolean) => void;
+  onDragEndItem: () => void;
+  /** 当前行显示的插入位置提示 */
+  dropHint: "before" | "after" | null;
 }
 
 export function TaskItem({
@@ -24,7 +32,12 @@ export function TaskItem({
   onHighlightEnd,
   onToggle,
   onDelete,
-  onSetRemindAt,
+  onEditTask,
+  onDragStartItem,
+  onDragOverItem,
+  onDropItem,
+  onDragEndItem,
+  dropHint,
 }: TaskItemProps) {
   const overdue = !task.done && !!task.remindAt && isOverdue(task.remindAt, now);
   const timeText = task.remindAt ? formatTaskTime(task.remindAt, now) : null;
@@ -33,11 +46,9 @@ export function TaskItem({
   const [pickerAnchor, setPickerAnchor] = useState<{ top: number; right: number } | null>(
     null,
   );
-
-  function openPicker(event: React.MouseEvent<HTMLButtonElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    setPickerAnchor({ top: rect.bottom + 4, right: rect.right });
-  }
+  // 删除二次确认：点一下变红色垃圾桶，再点才删（3 秒不点自动还原）
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const confirmTimer = useRef<number | null>(null);
 
   // Toast「点主体」呼出面板：滚到可见并保留描边 2 秒（M2-1）
   useEffect(() => {
@@ -49,11 +60,47 @@ export function TaskItem({
     return () => window.clearTimeout(timer);
   }, [highlighted, onHighlightEnd]);
 
+  useEffect(() => {
+    return () => {
+      if (confirmTimer.current !== null) {
+        window.clearTimeout(confirmTimer.current);
+      }
+    };
+  }, []);
+
+  function openPicker(event: MouseEvent<HTMLButtonElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setPickerAnchor({ top: rect.bottom + 4, right: rect.right });
+  }
+
+  function handleDeleteClick() {
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      confirmTimer.current = window.setTimeout(() => setConfirmingDelete(false), 3000);
+      return;
+    }
+    if (confirmTimer.current !== null) {
+      window.clearTimeout(confirmTimer.current);
+    }
+    void onDelete(task.id);
+  }
+
+  function handleDragStart(event: DragEvent<HTMLLIElement>) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(task.id));
+    onDragStartItem(task.id);
+  }
+
   return (
     <li
       className={`group flex min-h-[44px] items-center gap-2 rounded-md px-1.5 transition-colors duration-150 hover:bg-[var(--surface-hover)]${
         highlighted ? " task-highlight" : ""
-      }`}
+      }${dropHint ? ` drop-${dropHint}` : ""}`}
+      draggable
+      onDragEnd={onDragEndItem}
+      onDragOver={(event) => onDragOverItem(task.id, task.done, event)}
+      onDragStart={handleDragStart}
+      onDrop={() => onDropItem(task.id, task.done)}
       ref={itemRef}
     >
       <label className="task-check" title={task.done ? "标记未完成" : "标记完成"}>
@@ -75,50 +122,51 @@ export function TaskItem({
         {task.title}
       </span>
       {timeText ? (
-        <button
-          aria-label={`修改任务「${task.title}」的提醒时间`}
-          className={`shrink-0 cursor-pointer rounded px-0.5 text-xs tabular-nums transition-colors duration-150 ${
+        <span
+          className={`shrink-0 text-[11px] tabular-nums ${
             overdue
-              ? "font-semibold text-[color:var(--danger)] hover:text-[color:var(--danger)]"
+              ? "font-semibold text-[color:var(--danger)]"
               : task.done
                 ? "text-[color:var(--done-fg)]"
-                : "text-[color:var(--fg-muted)] hover:text-[color:var(--fg)]"
+                : "text-[color:var(--fg-muted)]"
           }`}
-          onClick={openPicker}
-          title="修改提醒时间"
-          type="button"
         >
           {timeText}
-        </button>
-      ) : (
-        !task.done ? (
-          <button
-            aria-label={`给任务「${task.title}」设置提醒时间`}
-            className="icon-btn icon-btn-sm shrink-0 opacity-0 transition-opacity duration-150 focus-visible:opacity-100 group-hover:opacity-100"
-            onClick={openPicker}
-            title="设置提醒时间"
-            type="button"
-          >
-            <ClockIcon className="h-4 w-4" />
-          </button>
-        ) : null
-      )}
+        </span>
+      ) : null}
       <button
-        aria-label={`删除任务「${task.title}」`}
+        aria-label={`编辑任务「${task.title}」`}
         className="icon-btn icon-btn-sm shrink-0 opacity-0 transition-opacity duration-150 focus-visible:opacity-100 group-hover:opacity-100"
-        onClick={() => void onDelete(task.id)}
+        onClick={openPicker}
+        title="编辑任务"
         type="button"
       >
-        <XIcon className="h-[14px] w-[14px]" />
+        <EditIcon className="h-[14px] w-[14px]" />
+      </button>
+      <button
+        aria-label={
+          confirmingDelete ? `再次点击确认删除任务「${task.title}」` : `删除任务「${task.title}」`
+        }
+        className={`icon-btn icon-btn-sm shrink-0 transition-opacity duration-150 focus-visible:opacity-100 ${
+          confirmingDelete
+            ? "text-[color:var(--danger)] opacity-100 hover:text-[color:var(--danger)]"
+            : "opacity-0 group-hover:opacity-100"
+        }`}
+        onClick={handleDeleteClick}
+        title={confirmingDelete ? "再次点击确认删除" : "删除任务"}
+        type="button"
+      >
+        {confirmingDelete ? <TrashIcon className="h-[14px] w-[14px]" /> : <XIcon className="h-[14px] w-[14px]" />}
       </button>
       {pickerAnchor ? (
         <ReminderPicker
           anchor={pickerAnchor}
           initial={task.remindAt}
+          initialTitle={task.title}
           onCancel={() => setPickerAnchor(null)}
-          onConfirm={(remindAt) => {
+          onConfirm={({ remindAt, title }) => {
             setPickerAnchor(null);
-            void onSetRemindAt(task.id, remindAt);
+            void onEditTask(task.id, title ?? task.title, remindAt);
           }}
         />
       ) : null}

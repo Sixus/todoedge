@@ -134,8 +134,6 @@ button {
 
 .picker-card {
   position: fixed;
-  right: 10px;
-  bottom: 48px;
   z-index: 30;
   width: 250px;
   padding: 12px;
@@ -194,6 +192,79 @@ button {
   background: var(--check-bg);
   color: var(--check-fg);
   opacity: 0.92;
+}
+
+/* 整点/半点下拉列表（打开时滚动到当前选中项） */
+.picker-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  max-height: 156px;
+  overflow-y: auto;
+  border: 1px solid var(--pop-border);
+  border-radius: 6px;
+  background: var(--pop-bg);
+  box-shadow: var(--pop-shadow);
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.picker-option {
+  display: block;
+  width: 100%;
+  padding: 5px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.picker-option:hover {
+  background: var(--surface-hover);
+  color: var(--fg);
+}
+
+.picker-option-selected {
+  background: var(--check-bg);
+  color: var(--check-fg);
+}
+
+.picker-option-selected:hover {
+  background: var(--check-bg);
+  color: var(--check-fg);
+}
+
+/* 新建任务输入框内联提醒时间（替换闹钟按钮位置） */
+.inline-reminder {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--check-bg);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+
+.inline-reminder:hover {
+  background: var(--surface-hover);
+}
+
+/* 拖拽排序插入位置指示线 */
+.drop-before {
+  box-shadow: inset 0 2px 0 var(--check-bg);
+}
+
+.drop-after {
+  box-shadow: inset 0 -2px 0 var(--check-bg);
 }
 
 /* 图标按钮（底栏 32px / 输入框内 24px 两档） */

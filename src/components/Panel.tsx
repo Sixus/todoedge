@@ -14,8 +14,10 @@ interface PanelProps {
   onAdd: (title: string, remindAt?: string | null) => Promise<void>;
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
-  /** 设定/改期（ISO）或清除（null）提醒时间（M2-3 选择器） */
-  onSetRemindAt: (id: number, remindAt: string | null) => Promise<void>;
+  /** 编辑任务标题 + 提醒时间（M2-3 编辑弹层；null = 清除提醒） */
+  onEditTask: (id: number, title: string, remindAt: string | null) => Promise<void>;
+  /** 拖拽排序落定：按新顺序提交全部任务 id */
+  onReorder: (orderedIds: number[]) => Promise<void>;
   onCollapse: () => void;
   onEditingChange: (editing: boolean) => void;
   /** Toast「点主体」呼出时要求高亮的任务 id（M2-1） */
@@ -30,7 +32,8 @@ export function Panel({
   onAdd,
   onToggle,
   onDelete,
-  onSetRemindAt,
+  onEditTask,
+  onReorder,
   onCollapse,
   onEditingChange,
   highlightTaskId,
@@ -192,7 +195,8 @@ export function Panel({
             now={now}
             onHighlightEnd={onHighlightEnd}
             onDelete={onDelete}
-            onSetRemindAt={onSetRemindAt}
+            onEditTask={onEditTask}
+            onReorder={(orderedIds) => void onReorder(orderedIds)}
             onToggle={onToggle}
             tasks={tasks}
           />

@@ -30,6 +30,11 @@ function compareDates(first: string, second: string): number {
   return Number.isNaN(difference) ? 0 : difference;
 }
 
+/**
+ * 分区内排序：双方都有手动顺序（sort_order，拖拽时全分区写入）就按手动序；
+ * 任一方没有（如新建任务）则回退默认规则，避免打乱未拖拽清单的既有顺序。
+ */
+
 /** 按本地时间规则生成清单顺序，原数组不会被修改。 */
 export function sortTasks(tasks: Task[], now = dayjs()): Task[] {
   const todayStart = now.startOf("day");
@@ -41,6 +46,15 @@ export function sortTasks(tasks: Task[], now = dayjs()): Task[] {
 
     if (firstBucket !== secondBucket) {
       return firstBucket - secondBucket;
+    }
+
+    // 手动顺序只在同分区内生效（待办/已完成互不越界，docs/05 用户反馈）
+    const manualOrder =
+      first.sortOrder !== null && second.sortOrder !== null
+        ? first.sortOrder - second.sortOrder
+        : null;
+    if (manualOrder !== null && manualOrder !== 0) {
+      return manualOrder;
     }
 
     if (firstBucket === 0 || firstBucket === 1) {

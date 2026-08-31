@@ -17,7 +17,8 @@ function App() {
     addTask,
     toggleTask,
     deleteTask,
-    setRemindAt,
+    editTask,
+    reorderTasks,
     reload,
   } = useTasks();
   const [collapsed, setCollapsed] = useState(true);
@@ -113,7 +114,8 @@ function App() {
       onDelete={deleteTask}
       onEditingChange={setPanelEditing}
       onHighlightEnd={clearHighlight}
-      onSetRemindAt={setRemindAt}
+      onEditTask={editTask}
+      onReorder={reorderTasks}
       onToggle={toggleTask}
       tasks={tasks}
     />

@@ -38,6 +38,7 @@ pub fn run() {
             commands::delete_task,
             commands::update_task,
             commands::clear_reminder,
+            commands::reorder_tasks,
             commands::get_setting,
             commands::set_setting,
             window_ctl::expand_panel,
