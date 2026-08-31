@@ -1,7 +1,8 @@
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_autostart::ManagerExt;
 
 use crate::db::Db;
 
@@ -165,6 +166,52 @@ pub fn reorder_tasks(db: State<Db>, ids: Vec<i64>) -> Result<(), String> {
     }
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// 打开设置小窗：窗口在应用启动时已预创建（隐藏），这里只显示并聚焦。
+/// 不要改成「点击时运行时创建」——WebView2 控制器在 setup 之外创建会得到
+/// 一个永远白屏的空壳窗口（2026-09-01 实测，与创建线程无关）。
+#[tauri::command]
+pub fn open_settings(app: AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("settings")
+        .ok_or("设置窗口未初始化")?;
+    let _ = window.center();
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 创建设置小窗（隐藏）。setup 启动时调用一次；之后 open_settings 只负责显示。
+pub fn preload_settings_window(app: &AppHandle) -> Result<(), String> {
+    tauri::WebviewWindowBuilder::new(
+        app,
+        "settings",
+        tauri::WebviewUrl::App("settings.html".into()),
+    )
+    .title("TodoEdge 设置")
+    .inner_size(360.0, 420.0)
+    .resizable(false)
+    .visible(false)
+    .build()
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 开机自启当前状态（tauri-plugin-autostart，默认关）。
+#[tauri::command]
+pub fn autostart_status(app: AppHandle) -> Result<bool, String> {
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let autostart = app.autolaunch();
+    if enabled {
+        autostart.enable().map_err(|e| e.to_string())
+    } else {
+        autostart.disable().map_err(|e| e.to_string())
+    }
 }
 
 #[tauri::command]

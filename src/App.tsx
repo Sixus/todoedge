@@ -8,6 +8,12 @@ import { Panel } from "./components/Panel";
 import { Strip } from "./components/Strip";
 import { useTasks } from "./hooks/useTasks";
 import { api, type WindowMode } from "./lib/api";
+import {
+  applyMaterial,
+  MATERIAL_SETTING_KEY,
+  normalizeMaterial,
+  type Material,
+} from "./lib/material";
 
 function App() {
   const {
@@ -24,6 +30,24 @@ function App() {
   const [collapsed, setCollapsed] = useState(true);
   const [highlightTaskId, setHighlightTaskId] = useState<number | null>(null);
   const isTransitioning = useRef(false);
+
+  // 外观材质：启动读持久化值，设置小窗改动后事件即时同步
+  useEffect(() => {
+    void api
+      .getSetting(MATERIAL_SETTING_KEY)
+      .then((value) => applyMaterial(normalizeMaterial(value)))
+      .catch(() => undefined);
+    const unlisten = listen<Material>("material-changed", (event) => {
+      applyMaterial(normalizeMaterial(event.payload));
+    });
+    return () => {
+      void unlisten.then((dispose) => dispose());
+    };
+  }, []);
+
+  const openSettings = useCallback(() => {
+    void api.openSettings().catch(() => undefined);
+  }, []);
 
   const syncWindowMode = useCallback((mode: WindowMode) => {
     setCollapsed(mode === "collapsed");
@@ -115,6 +139,7 @@ function App() {
       onEditingChange={setPanelEditing}
       onHighlightEnd={clearHighlight}
       onEditTask={editTask}
+      onOpenSettings={openSettings}
       onReorder={reorderTasks}
       onToggle={toggleTask}
       tasks={tasks}

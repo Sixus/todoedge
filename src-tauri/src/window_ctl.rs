@@ -93,19 +93,6 @@ fn configure_native_window(window: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(windows)]
-fn apply_material(window: &WebviewWindow) {
-    // 窗口带 WS_EX_NOACTIVATE 永不激活，而 DWM 的系统材质（Mica/Acrylic backdrop、
-    // SetWindowCompositionAttribute 的亚克力与模糊）在这种窗口上经实测都只渲染
-    // 纯色兜底、不会有真实模糊。因此不做任何系统材质，直接用 Tao 原生逐像素
-    // 透明 + 前端半透明 CSS 真实透出桌面；深浅主题由 prefers-color-scheme 负责。
-    let script = "document.documentElement.dataset.material = \"glass\";";
-    let _ = window.eval(script);
-}
-
-#[cfg(not(windows))]
-fn apply_material(_: &WebviewWindow) {}
-
 #[cfg(not(windows))]
 fn configure_native_window(_: &WebviewWindow) -> Result<(), String> {
     Ok(())
@@ -134,7 +121,8 @@ fn set_mode(
     should_show: bool,
 ) -> Result<WindowMode, String> {
     apply_geometry(window, mode)?;
-    apply_material(window);
+    // 材质（透明/实体）由前端按 settings 持久化值驱动 data-material，
+    // 这里不再覆盖，否则每次展开/收起都会把用户选的实体改回透明
     *state.mode.lock().map_err(|_| "窗口状态已损坏")? = mode;
     window
         .emit("window-mode-changed", mode)

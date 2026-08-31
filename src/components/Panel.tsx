@@ -18,6 +18,8 @@ interface PanelProps {
   onEditTask: (id: number, title: string, remindAt: string | null) => Promise<void>;
   /** 拖拽排序落定：按新顺序提交全部任务 id */
   onReorder: (orderedIds: number[]) => Promise<void>;
+  /** 打开设置小窗（M2-4） */
+  onOpenSettings: () => void;
   onCollapse: () => void;
   onEditingChange: (editing: boolean) => void;
   /** Toast「点主体」呼出时要求高亮的任务 id（M2-1） */
@@ -34,6 +36,7 @@ export function Panel({
   onDelete,
   onEditTask,
   onReorder,
+  onOpenSettings,
   onCollapse,
   onEditingChange,
   highlightTaskId,
@@ -203,7 +206,7 @@ export function Panel({
         ) : null}
       </section>
 
-      {/* ④ 底栏（已完成/设置为占位：M3-1 周报视图、M2-4 设置小窗） */}
+      {/* ④ 底栏（已完成为占位：M3-1 周报视图） */}
       <footer className="flex items-center justify-between border-t border-[var(--border-subtle)] py-1.5 pl-5 pr-2.5">
         <span className="text-xs text-[color:var(--fg-muted)]">未完成 {pendingCount}</span>
         <div className="flex items-center">
@@ -218,7 +221,8 @@ export function Panel({
           <button
             aria-label="设置"
             className="icon-btn"
-            title="设置（即将推出）"
+            onClick={onOpenSettings}
+            title="设置"
             type="button"
           >
             <SettingsIcon className="h-[18px] w-[18px]" />

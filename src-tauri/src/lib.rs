@@ -12,6 +12,10 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(|app| {
             // 数据库放 {app_data_dir}/todoedge/todo.db（docs/02 第 4.2 节）
             let data_dir = app.path().app_data_dir().expect("获取数据目录失败");
@@ -29,6 +33,11 @@ pub fn run() {
             // 通知线程先于调度器启动（回调依赖 Db State；调度器会投递 Toast）
             toast::start(app.handle().clone());
             scheduler::start(app.handle().clone());
+
+            // 设置小窗：启动时预创建（隐藏），点齿轮时只显示/聚焦——
+            // 运行时创建 WebView2 会得到白屏空壳（见 commands::open_settings 注释）
+            commands::preload_settings_window(app.handle())
+                .unwrap_or_else(|e| panic!("创建设置窗口失败：{e}"));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -39,6 +48,9 @@ pub fn run() {
             commands::update_task,
             commands::clear_reminder,
             commands::reorder_tasks,
+            commands::open_settings,
+            commands::autostart_status,
+            commands::set_autostart,
             commands::get_setting,
             commands::set_setting,
             window_ctl::expand_panel,
