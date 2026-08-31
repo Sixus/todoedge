@@ -41,7 +41,12 @@ export function Panel({
   const isEditingRef = useRef(false);
   const [isEditing, setIsEditing] = useState(false);
 
-  const now = useMemo(() => dayjs(), []);
+  // 当前时刻：面板长开时也要流动，否则概览统计/过期标记/排序会停在挂载瞬间
+  const [now, setNow] = useState(() => dayjs());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(dayjs()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
   // 概览计数（01 文档 5.2 节）：过期 = 提醒已过且未完成；今日 = 提醒在今天且未完成
   const { overdueCount, todayCount } = useMemo(() => {
     let overdue = 0;

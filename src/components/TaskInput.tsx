@@ -17,7 +17,9 @@ export function TaskInput({ onAdd, onFocus, onBlur }: TaskInputProps) {
   const [isAdding, setIsAdding] = useState(false);
   // ⏰ 选择器显式设定的提醒时间；设定后优先于自然语言解析（以选择器修正为准）
   const [pickedRemindAt, setPickedRemindAt] = useState<string | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerAnchor, setPickerAnchor] = useState<{ top: number; right: number } | null>(
+    null,
+  );
 
   const parsed = useMemo(() => parseReminder(title), [title]);
   const preview = pickedRemindAt
@@ -65,51 +67,58 @@ export function TaskInput({ onAdd, onFocus, onBlur }: TaskInputProps) {
   }
 
   return (
-    <form className="relative" onSubmit={handleSubmit}>
-      <input
-        aria-label="新建任务"
-        className="h-8 w-full rounded-lg border border-[var(--input-border)] bg-[var(--input-bg)] pl-3 pr-[58px] text-[13px] text-[color:var(--fg)] outline-none transition-colors duration-150 placeholder:text-[color:var(--fg-faint)] focus:border-[var(--input-focus)] disabled:bg-[var(--disabled-bg)]"
-        disabled={isAdding}
-        onBlur={onBlur}
-        onChange={(event) => setTitle(event.target.value)}
-        onFocus={onFocus}
-        onKeyDown={handleKeyDown}
-        placeholder="添加任务，如：明天9点开会"
-        type="text"
-        value={title}
-      />
-      <div className="absolute right-[4px] top-1/2 flex -translate-y-1/2 items-center">
-        <button
-          aria-label="设置提醒时间"
-          className="icon-btn icon-btn-sm"
-          onClick={() => setPickerOpen(true)}
-          title="设置提醒时间"
-          type="button"
-        >
-          <ClockIcon className="h-4 w-4" />
-        </button>
-        <button
-          aria-label="添加任务"
-          className="icon-btn icon-btn-sm"
+    <form onSubmit={handleSubmit}>
+      {/* 输入框行：按钮锚在这一行，不受下方预览行影响 */}
+      <div className="relative">
+        <input
+          aria-label="新建任务"
+          className="h-8 w-full rounded-lg border border-[var(--input-border)] bg-[var(--input-bg)] pl-3 pr-[58px] text-[13px] text-[color:var(--fg)] outline-none transition-colors duration-150 placeholder:text-[color:var(--fg-faint)] focus:border-[var(--input-focus)] disabled:bg-[var(--disabled-bg)]"
           disabled={isAdding}
-          type="submit"
-        >
-          <PlusIcon className="h-4 w-4" />
-        </button>
+          onBlur={onBlur}
+          onChange={(event) => setTitle(event.target.value)}
+          onFocus={onFocus}
+          onKeyDown={handleKeyDown}
+          placeholder="添加任务，如：明天9点开会"
+          type="text"
+          value={title}
+        />
+        <div className="absolute right-[4px] top-1/2 flex -translate-y-1/2 items-center">
+          <button
+            aria-label="设置提醒时间"
+            className="icon-btn icon-btn-sm"
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              setPickerAnchor({ top: rect.bottom + 4, right: rect.right });
+            }}
+            title="设置提醒时间"
+            type="button"
+          >
+            <ClockIcon className="h-4 w-4" />
+          </button>
+          <button
+            aria-label="添加任务"
+            className="icon-btn icon-btn-sm"
+            disabled={isAdding}
+            type="submit"
+          >
+            <PlusIcon className="h-4 w-4" />
+          </button>
+        </div>
       </div>
-      {/* 实时预览：小字灰色；解析失败且未用选择器设定时不显示 */}
+      {/* 实时预览：解析失败且未用选择器设定时不显示 */}
       {preview ? (
-        <p className="truncate pt-1 text-[11px] leading-4 text-[color:var(--fg-faint)]">
+        <p className="truncate pt-1 text-[11px] leading-4 text-[color:var(--fg-muted)]">
           将提醒：{preview}
         </p>
       ) : null}
-      {pickerOpen ? (
+      {pickerAnchor ? (
         <ReminderPicker
+          anchor={pickerAnchor}
           initial={pickedRemindAt}
-          onCancel={() => setPickerOpen(false)}
+          onCancel={() => setPickerAnchor(null)}
           onConfirm={(remindAt) => {
             setPickedRemindAt(remindAt);
-            setPickerOpen(false);
+            setPickerAnchor(null);
           }}
         />
       ) : null}

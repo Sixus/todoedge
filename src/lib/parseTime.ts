@@ -7,7 +7,8 @@ import type { Dayjs } from "dayjs";
  * - 相对日：今天 / 明天 / 后天 / 大后天
  * - 星期：周X / 星期X（未来最近的那天；就在今天则下周）
  * - 时段+钟点：上午/早上/中午/下午/晚上 + N点/N点半/N点M分/N:MM
- *   （无时段的 N点（1~11 点）按上午解释，若今天该时刻已过则按下午——
+ *   （N 支持阿拉伯或中文数字：「八点半」「两点半」「八点二十分」；
+ *     无时段的 N点（1~11 点）按上午解释，若今天该时刻已过则按下午——
  *     「3点」在上午输入=15:00，「明天9点」=09:00，与验收两条一致）
  * - 相对时长：N分钟后 / N小时后 / N天后
  * - 完整时间：HH:MM、M月d日、M月d日 HH:MM（年份取今年，已过则明年）
@@ -25,9 +26,9 @@ const DURATION_RE = /(\d{1,3})(分钟|小时|天)后/;
 const DATE_RE =
   /(今天|明天|后天|大后天|星期[一二三四五六日天]|周[一二三四五六日天]|\d{1,2}月\d{1,2}日)/;
 
-/** 钟点：可选时段 + N点(半|N分)?，或 N:MM（支持全角冒号） */
+/** 钟点：可选时段 + N点(半|N分)?（N 支持阿拉伯或中文数字），或 N:MM（支持全角冒号） */
 const CLOCK_RE =
-  /(?:(上午|早上|中午|下午|晚上)\s*)?(\d{1,2})\s*点(半|(\d{1,2})分)?|(\d{1,2})[:：](\d{2})/;
+  /(?:(上午|早上|中午|下午|晚上)\s*)?(\d{1,2}|[一两二三四五六七八九十]{1,2})\s*点(半|(\d{1,2}|[一二三四五六七八九十]{1,3})分)?|(\d{1,2})[:：](\d{2})/;
 
 const WEEKDAY_BY_CHAR: Record<string, number> = {
   一: 1,
@@ -39,6 +40,43 @@ const WEEKDAY_BY_CHAR: Record<string, number> = {
   日: 0,
   天: 0,
 };
+
+const CN_DIGITS: Record<string, number> = {
+  零: 0,
+  一: 1,
+  二: 2,
+  两: 2,
+  三: 3,
+  四: 4,
+  五: 5,
+  六: 6,
+  七: 7,
+  八: 8,
+  九: 9,
+};
+
+/** 中文数字转数值：一~九、十、十一、二十、二十一分等（上限 99） */
+function cnToNumber(text: string): number | null {
+  if (text in CN_DIGITS) {
+    return CN_DIGITS[text];
+  }
+  const tenIndex = text.indexOf("十");
+  if (tenIndex === -1) {
+    return null;
+  }
+  const tensPart = text.slice(0, tenIndex);
+  const onesPart = text.slice(tenIndex + 1);
+  const tens = tensPart === "" ? 1 : CN_DIGITS[tensPart];
+  const ones = onesPart === "" ? 0 : CN_DIGITS[onesPart];
+  if (tens === undefined || ones === undefined) {
+    return null;
+  }
+  return tens * 10 + ones;
+}
+
+function parseClockNumber(text: string): number | null {
+  return /\d/.test(text) ? Number(text) : cnToNumber(text);
+}
 
 /** 解析失败返回 null，整句按纯标题处理 */
 export function parseReminder(text: string, now: Dayjs = dayjs()): ParsedReminder | null {
@@ -133,16 +171,21 @@ function resolveClock(
     return { time: day.hour(9).minute(0) };
   }
 
-  let hour: number;
+  let hour: number | null;
   let minute: number;
   if (clockMatch[2] !== undefined) {
-    hour = Number(clockMatch[2]);
-    minute = clockMatch[3] === "半" ? 30 : clockMatch[3] !== undefined ? Number(clockMatch[4]) : 0;
+    hour = parseClockNumber(clockMatch[2]);
+    minute =
+      clockMatch[3] === "半"
+        ? 30
+        : clockMatch[3] !== undefined
+          ? (clockMatch[4] !== undefined ? parseClockNumber(clockMatch[4]) : null) ?? -1
+          : 0;
   } else {
     hour = Number(clockMatch[5]);
     minute = Number(clockMatch[6]);
   }
-  if (hour > 23 || minute > 59) {
+  if (hour === null || hour > 23 || minute < 0 || minute > 59) {
     return null;
   }
 

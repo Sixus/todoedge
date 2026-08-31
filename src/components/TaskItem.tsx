@@ -29,7 +29,15 @@ export function TaskItem({
   const overdue = !task.done && !!task.remindAt && isOverdue(task.remindAt, now);
   const timeText = task.remindAt ? formatTaskTime(task.remindAt, now) : null;
   const itemRef = useRef<HTMLLIElement>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  // 弹层锚点：打开时记录触发控件位置，卡片钉在它下方
+  const [pickerAnchor, setPickerAnchor] = useState<{ top: number; right: number } | null>(
+    null,
+  );
+
+  function openPicker(event: React.MouseEvent<HTMLButtonElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setPickerAnchor({ top: rect.bottom + 4, right: rect.right });
+  }
 
   // Toast「点主体」呼出面板：滚到可见并保留描边 2 秒（M2-1）
   useEffect(() => {
@@ -76,7 +84,7 @@ export function TaskItem({
                 ? "text-[color:var(--done-fg)]"
                 : "text-[color:var(--fg-muted)] hover:text-[color:var(--fg)]"
           }`}
-          onClick={() => setPickerOpen(true)}
+          onClick={openPicker}
           title="修改提醒时间"
           type="button"
         >
@@ -87,7 +95,7 @@ export function TaskItem({
           <button
             aria-label={`给任务「${task.title}」设置提醒时间`}
             className="icon-btn icon-btn-sm shrink-0 opacity-0 transition-opacity duration-150 focus-visible:opacity-100 group-hover:opacity-100"
-            onClick={() => setPickerOpen(true)}
+            onClick={openPicker}
             title="设置提醒时间"
             type="button"
           >
@@ -103,12 +111,13 @@ export function TaskItem({
       >
         <XIcon className="h-[14px] w-[14px]" />
       </button>
-      {pickerOpen ? (
+      {pickerAnchor ? (
         <ReminderPicker
+          anchor={pickerAnchor}
           initial={task.remindAt}
-          onCancel={() => setPickerOpen(false)}
+          onCancel={() => setPickerAnchor(null)}
           onConfirm={(remindAt) => {
-            setPickerOpen(false);
+            setPickerAnchor(null);
             void onSetRemindAt(task.id, remindAt);
           }}
         />

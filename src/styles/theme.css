@@ -6,8 +6,8 @@
 :root {
   color-scheme: light;
 
-  /* 面板容器 */
-  --bg: rgba(244, 244, 244, 0.5);
+  /* 面板容器（透明度 70%，用户反馈调优） */
+  --bg: rgba(244, 244, 244, 0.7);
   --fg: #242424;
   --fg-muted: #616161;
   --fg-faint: #707070;
@@ -50,8 +50,8 @@
   :root {
     color-scheme: dark;
 
-    /* 面板容器 */
-    --bg: rgba(32, 32, 32, 0.45);
+    /* 面板容器（透明度 70%，用户反馈调优） */
+    --bg: rgba(32, 32, 32, 0.7);
     --fg: #ffffff;
     --fg-muted: #adadad;
     --fg-faint: #999999;
