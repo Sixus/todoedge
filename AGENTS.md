@@ -5,8 +5,10 @@
 界面/行为规格以它为准，不得自行发挥）。开发流程与技术架构见 docs/02-开发总指南.md。
 
 ## 技术栈（不得擅改）
-Tauri 2.x / React 18 + TS + Vite / Tailwind 4 / rusqlite / window-vibrancy /
+Tauri 2.x / React 18 + TS + Vite / Tailwind 4 / rusqlite /
 windows-rs。新增任何依赖前必须向用户说明并获同意。
+透明面板 = 原生逐像素透明 + CSS 半透明层，禁止引入 window-vibrancy 等
+DWM 系统材质（主窗口永不激活，系统材质只会渲染纯色兜底，见 01 文档第 7 节）。
 
 ## 硬性规则
 1. 单主窗口贴边架构：expand/collapse 改窗口几何，见 docs/02 第 4.1 节。
