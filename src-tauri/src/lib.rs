@@ -45,6 +45,7 @@ pub fn run() {
             commands::reorder_tasks,
             commands::autostart_status,
             commands::set_autostart,
+            commands::set_panel_animations,
             commands::get_setting,
             commands::set_setting,
             window_ctl::expand_panel,

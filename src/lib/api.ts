@@ -33,6 +33,8 @@ export const api = {
     invoke<void>("set_setting", { key, value }),
   autostartStatus: () => invoke<boolean>("autostart_status"),
   setAutostart: (enabled: boolean) => invoke<void>("set_autostart", { enabled }),
+  setPanelAnimations: (enabled: boolean) =>
+    invoke<void>("set_panel_animations", { enabled }),
   expandPanel: () => invoke<WindowMode>("expand_panel"),
   collapsePanel: () => invoke<WindowMode>("collapse_panel"),
   setPanelEditing: (editing: boolean) =>

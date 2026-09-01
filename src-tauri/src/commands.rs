@@ -1,10 +1,12 @@
+use std::sync::{atomic::Ordering, Arc};
+
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::Serialize;
 use tauri::{AppHandle, State};
 use tauri_plugin_autostart::ManagerExt;
 
-use crate::db::Db;
+use crate::{db::Db, window_ctl::WindowCtlState};
 
 /// 传给前端的任务结构：camelCase 字段，时间一律 RFC3339 字符串（UTC）。
 #[derive(Serialize)]
@@ -166,6 +168,12 @@ pub fn reorder_tasks(db: State<Db>, ids: Vec<i64>) -> Result<(), String> {
     }
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// 面板滑出/缩进动画开关（settings 表持久化，前端启动时同步）。
+#[tauri::command]
+pub fn set_panel_animations(state: State<'_, Arc<WindowCtlState>>, enabled: bool) {
+    state.animations_enabled.store(enabled, Ordering::Release);
 }
 
 /// 开机自启当前状态（tauri-plugin-autostart，默认关）。

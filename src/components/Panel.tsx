@@ -3,7 +3,7 @@ import dayjs from "dayjs";
 
 import type { Task } from "../lib/api";
 import { formatOverviewDate } from "../lib/format";
-import { CompletedIcon, SettingsIcon } from "./icons";
+import { CompletedIcon, PinIcon, SettingsIcon } from "./icons";
 import { SettingsView } from "./SettingsView";
 import { TaskInput } from "./TaskInput";
 import { TaskList } from "./TaskList";
@@ -12,6 +12,9 @@ interface PanelProps {
   tasks: Task[];
   isLoading: boolean;
   error: string | null;
+  /** 图钉固定：固定时屏蔽一切自动收起（移出/点外部/Esc/失焦），全屏强制收回除外 */
+  pinned: boolean;
+  onTogglePin: () => void;
   onAdd: (title: string, remindAt?: string | null) => Promise<void>;
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
@@ -30,6 +33,8 @@ export function Panel({
   tasks,
   isLoading,
   error,
+  pinned,
+  onTogglePin,
   onAdd,
   onToggle,
   onDelete,
@@ -46,6 +51,13 @@ export function Panel({
   const [isEditing, setIsEditing] = useState(false);
   // 设置视图：覆盖在面板内容上（M2-4 反馈后从独立小窗改为面板内嵌）
   const [showSettings, setShowSettings] = useState(false);
+
+  // 图钉激活时清掉已排队的自动收起
+  useEffect(() => {
+    if (pinned) {
+      clearCollapseTimer();
+    }
+  }, [pinned]);
 
   // 当前时刻：面板长开时也要流动，否则概览统计/过期标记/排序会停在挂载瞬间
   const [now, setNow] = useState(() => dayjs());
@@ -81,6 +93,10 @@ export function Panel({
   }
 
   function requestCollapse() {
+    // 图钉固定：移出/点外部/Esc/失焦等自动收起全部失效
+    if (pinned) {
+      return;
+    }
     clearCollapseTimer();
     onEditingChange(false);
     onCollapse();
@@ -221,6 +237,16 @@ export function Panel({
             type="button"
           >
             <CompletedIcon className="h-[18px] w-[18px]" />
+          </button>
+          <button
+            aria-label={pinned ? "取消固定面板" : "固定面板"}
+            aria-pressed={pinned}
+            className={`icon-btn ${pinned ? "pin-active" : ""}`}
+            onClick={onTogglePin}
+            title={pinned ? "取消固定" : "固定面板（不自动收回）"}
+            type="button"
+          >
+            <PinIcon className="h-[18px] w-[18px]" />
           </button>
           <button
             aria-label="设置"

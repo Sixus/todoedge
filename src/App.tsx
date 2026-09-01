@@ -9,10 +9,13 @@ import { Strip } from "./components/Strip";
 import { useTasks } from "./hooks/useTasks";
 import { api, type WindowMode } from "./lib/api";
 import {
+  ANIMATIONS_SETTING_KEY,
   applyMaterial,
   MATERIAL_SETTING_KEY,
   normalizeMaterial,
 } from "./lib/material";
+
+const PINNED_SETTING_KEY = "pinned";
 
 function App() {
   const {
@@ -28,6 +31,7 @@ function App() {
   } = useTasks();
   const [collapsed, setCollapsed] = useState(true);
   const [highlightTaskId, setHighlightTaskId] = useState<number | null>(null);
+  const [pinned, setPinned] = useState(false);
   const isTransitioning = useRef(false);
 
   // 外观材质：启动读持久化值（设置视图与面板同文档，改动即时生效，无需跨窗口事件）
@@ -36,6 +40,24 @@ function App() {
       .getSetting(MATERIAL_SETTING_KEY)
       .then((value) => applyMaterial(normalizeMaterial(value)))
       .catch(() => undefined);
+    // 动画开关：设置表持久化，同步给 Rust 侧窗口动画逻辑
+    void api
+      .getSetting(ANIMATIONS_SETTING_KEY)
+      .then((value) => api.setPanelAnimations(value !== "0"))
+      .catch(() => undefined);
+    // 图钉固定：跨重启记住
+    void api
+      .getSetting(PINNED_SETTING_KEY)
+      .then((value) => setPinned(value === "1"))
+      .catch(() => undefined);
+  }, []);
+
+  const togglePin = useCallback(() => {
+    setPinned((prev) => {
+      const next = !prev;
+      void api.setSetting(PINNED_SETTING_KEY, next ? "1" : "0").catch(() => undefined);
+      return next;
+    });
   }, []);
 
   const syncWindowMode = useCallback((mode: WindowMode) => {
@@ -126,6 +148,8 @@ function App() {
       onCollapse={() => void collapsePanel()}
       onDelete={deleteTask}
       onEditingChange={setPanelEditing}
+      pinned={pinned}
+      onTogglePin={togglePin}
       onHighlightEnd={clearHighlight}
       onEditTask={editTask}
       onReorder={reorderTasks}

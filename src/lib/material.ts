@@ -3,6 +3,7 @@ export type Material = "glass" | "solid";
 
 export const MATERIAL_SETTING_KEY = "material";
 export const SNOOZE_SETTING_KEY = "snooze_minutes";
+export const ANIMATIONS_SETTING_KEY = "animations";
 
 export function applyMaterial(material: Material): void {
   document.documentElement.dataset.material = material;

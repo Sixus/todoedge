@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
     time::Duration,
@@ -9,10 +9,11 @@ use std::{
 use serde::Serialize;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Monitor, State, WebviewWindow};
 
+// 高度比例：展开与收起细条一致（用户反馈：细条高度 = 面板高度 = 屏高 35%）
 const COLLAPSED_WIDTH: f64 = 6.0;
-const COLLAPSED_HEIGHT_RATIO: f64 = 0.4;
+const COLLAPSED_HEIGHT_RATIO: f64 = 0.35;
 const EXPANDED_WIDTH: f64 = 340.0;
-const EXPANDED_HEIGHT_RATIO: f64 = 0.7;
+const EXPANDED_HEIGHT_RATIO: f64 = 0.35;
 
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -26,6 +27,10 @@ pub struct WindowCtlState {
     is_fullscreen: AtomicBool,
     is_editing: AtomicBool,
     left_button_down: AtomicBool,
+    /// 滑出/缩进动画开关（settings 表持久化，前端启动时同步进来）
+    pub animations_enabled: AtomicBool,
+    /// 窗口几何变更代数：每次 set_mode 自增；动画线程逐帧核对，代数变了即中止
+    generation: AtomicU64,
 }
 
 impl Default for WindowCtlState {
@@ -35,6 +40,8 @@ impl Default for WindowCtlState {
             is_fullscreen: AtomicBool::new(false),
             is_editing: AtomicBool::new(false),
             left_button_down: AtomicBool::new(false),
+            animations_enabled: AtomicBool::new(true),
+            generation: AtomicU64::new(0),
         }
     }
 }
@@ -78,6 +85,57 @@ fn apply_geometry(window: &WebviewWindow, mode: WindowMode) -> Result<(), String
         .map_err(|error| error.to_string())
 }
 
+/// 读取窗口当前几何（逻辑坐标），读不到（异常态）则返回 None、跳过动画。
+fn current_geometry(window: &WebviewWindow) -> Option<WindowGeometry> {
+    let scale = window.scale_factor().ok()?;
+    let size = window.outer_size().ok()?;
+    let position = window.outer_position().ok()?;
+    Some(WindowGeometry {
+        size: LogicalSize::new(size.width as f64 / scale, size.height as f64 / scale),
+        position: LogicalPosition::new(position.x as f64 / scale, position.y as f64 / scale),
+    })
+}
+
+fn lerp(from: f64, to: f64, t: f64) -> f64 {
+    from + (to - from) * t
+}
+
+/// 逐帧动画到目标几何（smoothstep 缓动，约 130ms）；动画线程每帧核对
+/// 代数，期间有新的 set_mode 就自行退出，末步精确落位交给最新一次调用。
+fn animate_to(
+    window: &WebviewWindow,
+    state: &Arc<WindowCtlState>,
+    from: WindowGeometry,
+    to: WindowGeometry,
+    generation: u64,
+) {
+    let window = window.clone();
+    let state = state.clone();
+    std::thread::spawn(move || {
+        const STEPS: u32 = 8;
+        for step in 1..=STEPS {
+            if state.generation.load(Ordering::Acquire) != generation {
+                return;
+            }
+            let t = step as f64 / STEPS as f64;
+            let eased = t * t * (3.0 - 2.0 * t);
+            let _ = window.set_size(LogicalSize::new(
+                lerp(from.size.width, to.size.width, eased),
+                lerp(from.size.height, to.size.height, eased),
+            ));
+            let _ = window.set_position(LogicalPosition::new(
+                lerp(from.position.x, to.position.x, eased),
+                lerp(from.position.y, to.position.y, eased),
+            ));
+            std::thread::sleep(Duration::from_millis(16));
+        }
+        if state.generation.load(Ordering::Acquire) == generation {
+            let _ = window.set_size(to.size);
+            let _ = window.set_position(to.position);
+        }
+    });
+}
+
 #[cfg(windows)]
 fn configure_native_window(window: &WebviewWindow) -> Result<(), String> {
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -116,11 +174,18 @@ fn show_without_activation(window: &WebviewWindow) -> Result<(), String> {
 
 fn set_mode(
     window: &WebviewWindow,
-    state: &WindowCtlState,
+    state: &Arc<WindowCtlState>,
     mode: WindowMode,
     should_show: bool,
 ) -> Result<WindowMode, String> {
-    apply_geometry(window, mode)?;
+    let monitor = window
+        .primary_monitor()
+        .map_err(|error| error.to_string())?
+        .ok_or("未找到主显示器")?;
+    let target = geometry_for(monitor, mode);
+
+    state.generation.fetch_add(1, Ordering::AcqRel);
+    let generation = state.generation.load(Ordering::Acquire);
     // 材质（透明/实体）由前端按 settings 持久化值驱动 data-material，
     // 这里不再覆盖，否则每次展开/收起都会把用户选的实体改回透明
     *state.mode.lock().map_err(|_| "窗口状态已损坏")? = mode;
@@ -128,13 +193,19 @@ fn set_mode(
         .emit("window-mode-changed", mode)
         .map_err(|error| error.to_string())?;
 
+    let animated = state.animations_enabled.load(Ordering::Acquire);
+    match (animated, current_geometry(window)) {
+        (true, Some(current)) => animate_to(window, state, current, target, generation),
+        _ => apply_geometry(window, mode)?,
+    }
+
     if should_show {
         show_without_activation(window)?;
     }
     Ok(mode)
 }
 
-pub fn initialize(window: &WebviewWindow, state: &WindowCtlState) -> Result<(), String> {
+pub fn initialize(window: &WebviewWindow, state: &Arc<WindowCtlState>) -> Result<(), String> {
     configure_native_window(window)?;
     window
         .set_always_on_top(true)

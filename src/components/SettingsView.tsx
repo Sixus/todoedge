@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../lib/api";
 import {
+  ANIMATIONS_SETTING_KEY,
   applyMaterial,
   MATERIAL_SETTING_KEY,
   normalizeMaterial,
@@ -25,6 +26,7 @@ function errorMessage(error: unknown): string {
 export function SettingsView({ onClose }: SettingsViewProps) {
   const [material, setMaterial] = useState<Material>("glass");
   const [snoozeMinutes, setSnoozeMinutes] = useState("10");
+  const [animations, setAnimations] = useState(true);
   const [autostart, setAutostart] = useState(false);
   const [autostartPending, setAutostartPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +41,8 @@ export function SettingsView({ onClose }: SettingsViewProps) {
         if (savedSnooze !== null && savedSnooze !== "") {
           setSnoozeMinutes(savedSnooze);
         }
+        const savedAnimations = await api.getSetting(ANIMATIONS_SETTING_KEY);
+        setAnimations(savedAnimations !== "0");
         setAutostart(await api.autostartStatus());
       } catch (cause) {
         setError(errorMessage(cause));
@@ -63,6 +67,16 @@ export function SettingsView({ onClose }: SettingsViewProps) {
         setError(errorMessage(cause));
       });
     }
+  }, []);
+
+  const changeAnimations = useCallback((enabled: boolean) => {
+    setAnimations(enabled);
+    void api.setSetting(ANIMATIONS_SETTING_KEY, enabled ? "1" : "0").catch((cause) => {
+      setError(errorMessage(cause));
+    });
+    void api.setPanelAnimations(enabled).catch((cause) => {
+      setError(errorMessage(cause));
+    });
   }, []);
 
   const changeAutostart = useCallback((enabled: boolean) => {
@@ -134,6 +148,21 @@ export function SettingsView({ onClose }: SettingsViewProps) {
           />
           <span className="text-[12px] text-[color:var(--fg-muted)]">分钟</span>
         </span>
+      </div>
+
+      <div className="settings-row">
+        <div className="settings-text">
+          <p className="settings-label">滑出 / 缩进动画</p>
+          <p className="settings-desc">展开和收起面板时播放过渡动画</p>
+        </div>
+        <button
+          aria-checked={animations}
+          aria-label={`滑出缩进动画，当前${animations ? "开启" : "关闭"}`}
+          className="settings-switch"
+          onClick={() => changeAnimations(!animations)}
+          role="switch"
+          type="button"
+        />
       </div>
 
       <div className="settings-row">

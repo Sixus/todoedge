@@ -559,3 +559,9 @@ button {
   cursor: default;
   opacity: 0.5;
 }
+
+/* 图钉固定激活态：覆盖 .icon-btn 的默认/hover 颜色 */
+.icon-btn.pin-active,
+.icon-btn.pin-active:hover:not(:disabled) {
+  color: var(--check-bg);
+}

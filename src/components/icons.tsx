@@ -96,3 +96,13 @@ export function EditIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+/** 图钉：固定面板（激活时蓝色高亮，面板不自动收回） */
+export function PinIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M12 17v5" />
+      <path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9a2 2 0 0 1-1.1-1.8V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" />
+    </svg>
+  );
+}
