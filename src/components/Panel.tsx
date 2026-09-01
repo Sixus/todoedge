@@ -16,6 +16,10 @@ interface PanelProps {
   /** 图钉固定：固定时屏蔽一切自动收起（移出/点外部/Esc/失焦），全屏强制收回除外 */
   pinned: boolean;
   onTogglePin: () => void;
+  /** 钉到桌面（M3-5）：面板常驻壁纸层时同样屏蔽一切自动收起 */
+  desktopPinned: boolean;
+  /** 钉/解钉桌面；失败原样抛出（设置视图负责提示），状态不变 */
+  onDesktopPinToggle: (enabled: boolean) => Promise<void>;
   onAdd: (title: string, remindAt?: string | null) => Promise<void>;
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
@@ -36,6 +40,8 @@ export function Panel({
   error,
   pinned,
   onTogglePin,
+  desktopPinned,
+  onDesktopPinToggle,
   onAdd,
   onToggle,
   onDelete,
@@ -55,12 +61,12 @@ export function Panel({
   // 周报视图：点底栏「已完成」覆盖面板（M3-1）
   const [showReport, setShowReport] = useState(false);
 
-  // 图钉激活时清掉已排队的自动收起
+  // 图钉/钉桌面激活时清掉已排队的自动收起
   useEffect(() => {
-    if (pinned) {
+    if (pinned || desktopPinned) {
       clearCollapseTimer();
     }
-  }, [pinned]);
+  }, [pinned, desktopPinned]);
 
   // 当前时刻：面板长开时也要流动，否则概览统计/过期标记/排序会停在挂载瞬间
   const [now, setNow] = useState(() => dayjs());
@@ -96,8 +102,8 @@ export function Panel({
   }
 
   function requestCollapse() {
-    // 图钉固定：移出/点外部/Esc/失焦等自动收起全部失效
-    if (pinned) {
+    // 图钉固定 / 钉到桌面：移出/点外部/Esc/失焦等自动收起全部失效
+    if (pinned || desktopPinned) {
       return;
     }
     clearCollapseTimer();
@@ -161,7 +167,8 @@ export function Panel({
       isEditingRef.current = false;
       onEditingChange(false);
     };
-  }, [onEditingChange]);
+    // requestCollapse 依赖 pinned/desktopPinned，监听器要随之重挂，别留旧闭包
+  }, [onEditingChange, pinned, desktopPinned]);
 
   return (
     <main
@@ -174,7 +181,11 @@ export function Panel({
       {showReport ? (
         <ReportView onClose={() => setShowReport(false)} onDelete={onDelete} tasks={tasks} />
       ) : showSettings ? (
-        <SettingsView onClose={() => setShowSettings(false)} />
+        <SettingsView
+          desktopPinned={desktopPinned}
+          onClose={() => setShowSettings(false)}
+          onToggleDesktopPin={onDesktopPinToggle}
+        />
       ) : (
         <>
           {/* ① 概览区 */}

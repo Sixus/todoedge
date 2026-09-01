@@ -17,6 +17,7 @@ import {
 import { applyTheme, normalizeTheme, THEME_SETTING_KEY } from "./lib/theme";
 
 const PINNED_SETTING_KEY = "pinned";
+const DESKTOP_PINNED_SETTING_KEY = "desktop_pinned";
 
 function App() {
   const {
@@ -33,6 +34,8 @@ function App() {
   const [collapsed, setCollapsed] = useState(true);
   const [highlightTaskId, setHighlightTaskId] = useState<number | null>(null);
   const [pinned, setPinned] = useState(false);
+  // 钉到桌面（M3-5）：面板常驻壁纸层时收起逻辑停用
+  const [desktopPinned, setDesktopPinned] = useState(false);
   const isTransitioning = useRef(false);
 
   // 外观材质：启动读持久化值（设置视图与面板同文档，改动即时生效，无需跨窗口事件）
@@ -51,6 +54,11 @@ function App() {
       .getSetting(PINNED_SETTING_KEY)
       .then((value) => setPinned(value === "1"))
       .catch(() => undefined);
+    // 钉到桌面：跨重启记住（Rust 启动时按同一设置恢复挂载，两边一致）
+    void api
+      .getSetting(DESKTOP_PINNED_SETTING_KEY)
+      .then((value) => setDesktopPinned(value === "1"))
+      .catch(() => undefined);
     // 深浅模式：auto 跟随系统 / 手动浅深，启动恢复（lib/theme.ts 内部已监听系统变化）
     void api
       .getSetting(THEME_SETTING_KEY)
@@ -66,6 +74,14 @@ function App() {
     });
   }, []);
 
+  // 钉到桌面开关（M3-5）：Rust 钉/解钉成功才更新状态并落库；
+  // 失败原样抛出，由设置视图提示，状态保持不变
+  const toggleDesktopPin = useCallback(async (enabled: boolean) => {
+    await api.setDesktopPin(enabled);
+    setDesktopPinned(enabled);
+    await api.setSetting(DESKTOP_PINNED_SETTING_KEY, enabled ? "1" : "0");
+  }, []);
+
   const syncWindowMode = useCallback((mode: WindowMode) => {
     setCollapsed(mode === "collapsed");
   }, []);
@@ -74,6 +90,11 @@ function App() {
     const unlisten = listen<WindowMode>("window-mode-changed", (event) => {
       syncWindowMode(event.payload);
     });
+    // 启动即钉桌面时，前端加载晚于 Rust 发出的模式事件，主动查一次兜底
+    void api
+      .currentWindowMode()
+      .then((mode) => syncWindowMode(mode))
+      .catch(() => undefined);
 
     return () => {
       void unlisten.then((dispose) => dispose());
@@ -157,12 +178,14 @@ function App() {
 
   return (
     <Panel
+      desktopPinned={desktopPinned}
       error={error}
       highlightTaskId={highlightTaskId}
       isLoading={isLoading}
       onAdd={addTask}
       onCollapse={() => void collapsePanel()}
       onDelete={deleteTask}
+      onDesktopPinToggle={toggleDesktopPin}
       onEditingChange={setPanelEditing}
       pinned={pinned}
       onTogglePin={togglePin}
