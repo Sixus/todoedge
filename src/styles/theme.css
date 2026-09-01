@@ -2,6 +2,11 @@
  * 外观系统变量：深浅（跟随系统）× 透明/实体（html[data-material="solid"]）
  * 共 4 组。见 docs/01-产品方案框架-v1.md 第 7 节。
  * 色值取自 docs/design/panel-dark.png / panel-light.png 视觉基准（Fluent 配色）。
+ *
+ * 矩阵组织：与材质无关的变量（--fg/--danger/--check-bg 等）在 :root 与
+ * 深色媒体查询里各写一次、四种组合共用；实体相关的覆盖写在两个
+ * [data-material="solid"] 块里。四组合 = (浅|深) × (继承基底|实体覆盖)。
+ * 实体模式要求不透明：面板/弹层背景用纯色，细条不再半透明（M3-2）。
  */
 :root {
   color-scheme: light;
@@ -44,6 +49,9 @@
   --surface-hover: #ececec;
   --input-bg: #ffffff;
   --disabled-bg: #e2e2e5;
+  /* 细条实体化：不透明中性灰，不再随桌面透色 */
+  --strip-bg: #c8c8c8;
+  --strip-opacity: 1;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -84,5 +92,8 @@
     --surface-hover: #2c2c2c;
     --input-bg: #333333;
     --disabled-bg: #2a2a2a;
+    /* 细条实体化：不透明中性灰，不再随桌面透色 */
+    --strip-bg: #5a5a5a;
+    --strip-opacity: 1;
   }
 }
