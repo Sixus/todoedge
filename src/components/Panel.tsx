@@ -4,6 +4,7 @@ import dayjs from "dayjs";
 import type { Task } from "../lib/api";
 import { formatOverviewDate } from "../lib/format";
 import { CompletedIcon, PinIcon, SettingsIcon } from "./icons";
+import { ReportView } from "./ReportView";
 import { SettingsView } from "./SettingsView";
 import { TaskInput } from "./TaskInput";
 import { TaskList } from "./TaskList";
@@ -51,6 +52,37 @@ export function Panel({
   const [isEditing, setIsEditing] = useState(false);
   // 设置视图：覆盖在面板内容上（M2-4 反馈后从独立小窗改为面板内嵌）
   const [showSettings, setShowSettings] = useState(false);
+  // 周报视图：点底栏「已完成」覆盖面板（M3-1）
+  const [showReport, setShowReport] = useState(false);
+  // 勾选完成后的离场行动画：主清单不再置底展示已完成（去向是周报），
+  // 行打勾+划线后滑出。状态放 Panel 层——reload 会短暂卸载 TaskList，本地状态会丢
+  const [leavingIds, setLeavingIds] = useState<ReadonlySet<number>>(() => new Set());
+  const prevDoneRef = useRef<Map<number, boolean>>(new Map());
+
+  useEffect(() => {
+    const prev = prevDoneRef.current;
+    const newlyDoneIds = tasks
+      .filter((task) => task.done && prev.get(task.id) === false)
+      .map((task) => task.id);
+    prevDoneRef.current = new Map(tasks.map((task) => [task.id, task.done]));
+    if (newlyDoneIds.length === 0) {
+      return;
+    }
+    setLeavingIds((current) => new Set([...current, ...newlyDoneIds]));
+    // 与动画时长（.task-leaving）联动：留出打勾+划线时间再滑出，播完移除
+    for (const id of newlyDoneIds) {
+      window.setTimeout(() => {
+        setLeavingIds((current) => {
+          if (!current.has(id)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.delete(id);
+          return next;
+        });
+      }, 700);
+    }
+  }, [tasks]);
 
   // 图钉激活时清掉已排队的自动收起
   useEffect(() => {
@@ -168,7 +200,9 @@ export function Panel({
       ref={panelRef}
       tabIndex={-1}
     >
-      {showSettings ? (
+      {showReport ? (
+        <ReportView onClose={() => setShowReport(false)} tasks={tasks} />
+      ) : showSettings ? (
         <SettingsView onClose={() => setShowSettings(false)} />
       ) : (
         <>
@@ -215,6 +249,7 @@ export function Panel({
         {!isLoading && !error ? (
           <TaskList
             highlightTaskId={highlightTaskId}
+            leavingIds={leavingIds}
             now={now}
             onHighlightEnd={onHighlightEnd}
             onDelete={onDelete}
@@ -226,14 +261,15 @@ export function Panel({
         ) : null}
       </section>
 
-      {/* ④ 底栏（已完成为占位：M3-1 周报视图） */}
+      {/* ④ 底栏 */}
       <footer className="flex items-center justify-between border-t border-[var(--border-subtle)] py-1.5 pl-5 pr-2.5">
         <span className="text-xs text-[color:var(--fg-muted)]">未完成 {pendingCount}</span>
         <div className="flex items-center">
           <button
             aria-label="已完成"
             className="icon-btn"
-            title="已完成（即将推出）"
+            onClick={() => setShowReport(true)}
+            title="已完成（周报）"
             type="button"
           >
             <CompletedIcon className="h-[18px] w-[18px]" />

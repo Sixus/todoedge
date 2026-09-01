@@ -11,6 +11,8 @@ interface TaskListProps {
   tasks: Task[];
   now: Dayjs;
   highlightTaskId: number | null;
+  /** 勾选后正在播滑出动画的任务 id（完成后去向是周报，主清单不再置底展示） */
+  leavingIds: ReadonlySet<number>;
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   onEditTask: (id: number, title: string, remindAt: string | null) => Promise<void>;
@@ -36,13 +38,22 @@ export function TaskList({
   tasks,
   now,
   highlightTaskId,
+  leavingIds,
   onToggle,
   onDelete,
   onEditTask,
   onReorder,
   onHighlightEnd,
 }: TaskListProps) {
-  const sortedTasks = sortTasks(tasks, now);
+  // 离场行按“未完成”参与排序，停留在原位播完滑出动画；渲染仍用真实数据（带勾选划线态）
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
+  const sortedTasks = sortTasks(
+    tasks.map((task) =>
+      task.done && leavingIds.has(task.id) ? { ...task, done: false } : task,
+    ),
+    now,
+  ).map((view) => taskById.get(view.id) ?? view);
+
   const [dragId, setDragId] = useState<number | null>(null);
   const [dropHint, setDropHint] = useState<{ id: number; position: DropPosition } | null>(
     null,
@@ -164,6 +175,7 @@ export function TaskList({
           now={now}
           highlighted={task.id === highlightTaskId}
           dragging={task.id === dragId}
+          leaving={task.done && leavingIds.has(task.id)}
           dropHint={hintFor(task)}
           onRowPointerDown={handleRowPointerDown}
           onRowPointerMove={handleRowPointerMove}

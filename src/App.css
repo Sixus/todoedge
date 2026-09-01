@@ -364,6 +364,18 @@ button {
   box-shadow: inset 0 -2px 0 var(--check-bg);
 }
 
+/* 勾选完成：打勾+划线可见后滑出清单，去向是周报视图（M3-1；总时长与 Panel 的 700ms 移除定时联动） */
+.task-leaving {
+  animation: task-slide-out 280ms ease-in 260ms forwards;
+}
+
+@keyframes task-slide-out {
+  to {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+
 /* 设置视图（M2-4：面板内嵌覆盖层，Windows 11 设置风格卡片行；背景与主面板一致） */
 .settings-overlay {
   position: absolute;
@@ -564,4 +576,140 @@ button {
 .icon-btn.pin-active,
 .icon-btn.pin-active:hover:not(:disabled) {
   color: var(--check-bg);
+}
+
+/* 周报视图（M3-1：覆盖面板的弹层，docs/01 5.4 节；背景与主面板一致） */
+.report-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px 12px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.report-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
+.report-nav {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+}
+
+.report-title {
+  margin: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 返回按钮：同 .settings-back 的方形底，但带文字 */
+.report-back {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    color 120ms ease-out,
+    background-color 120ms ease-out;
+}
+
+.report-back:hover {
+  background: var(--surface-hover);
+  color: var(--fg);
+}
+
+.report-list {
+  min-height: 0;
+  flex: 1;
+  margin: 0;
+  padding: 2px 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.report-row {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px;
+}
+
+.report-date {
+  flex-shrink: 0;
+  width: 40px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-faint);
+}
+
+.report-row-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.report-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.report-error {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: var(--danger);
+  text-align: center;
+}
+
+.report-footer {
+  padding-top: 8px;
+}
+
+.report-copy {
+  width: 100%;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--check-bg);
+  color: var(--check-fg);
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity 120ms ease-out;
+}
+
+.report-copy:hover:not(:disabled) {
+  opacity: 0.92;
+}
+
+.report-copy:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
