@@ -110,6 +110,16 @@ function App() {
     void api.setPanelEditing(editing);
   }, []);
 
+  // 全局禁掉网页默认右键菜单：WebView 菜单带刷新/检查/发送到设备等浏览器项，
+  // 输入框里也一样，一律不弹；剪切/复制/粘贴走 Ctrl+X/C/V 快捷键
+  useEffect(() => {
+    function onContextMenu(event: MouseEvent) {
+      event.preventDefault();
+    }
+    document.addEventListener("contextmenu", onContextMenu);
+    return () => document.removeEventListener("contextmenu", onContextMenu);
+  }, []);
+
   // Toast 交互路由（M2-1）：完成/稍后提醒只刷新列表（面板不弹出）；
   // 点通知主体 → 呼出面板并高亮该任务，描边由 TaskItem 持续 2 秒后撤掉
   const clearHighlight = useCallback(() => setHighlightTaskId(null), []);
