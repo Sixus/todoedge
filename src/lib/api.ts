@@ -31,7 +31,6 @@ export const api = {
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: string) =>
     invoke<void>("set_setting", { key, value }),
-  openSettings: () => invoke<void>("open_settings"),
   autostartStatus: () => invoke<boolean>("autostart_status"),
   setAutostart: (enabled: boolean) => invoke<void>("set_autostart", { enabled }),
   expandPanel: () => invoke<WindowMode>("expand_panel"),

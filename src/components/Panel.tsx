@@ -4,6 +4,7 @@ import dayjs from "dayjs";
 import type { Task } from "../lib/api";
 import { formatOverviewDate } from "../lib/format";
 import { CompletedIcon, SettingsIcon } from "./icons";
+import { SettingsView } from "./SettingsView";
 import { TaskInput } from "./TaskInput";
 import { TaskList } from "./TaskList";
 
@@ -18,8 +19,6 @@ interface PanelProps {
   onEditTask: (id: number, title: string, remindAt: string | null) => Promise<void>;
   /** 拖拽排序落定：按新顺序提交全部任务 id */
   onReorder: (orderedIds: number[]) => Promise<void>;
-  /** 打开设置小窗（M2-4） */
-  onOpenSettings: () => void;
   onCollapse: () => void;
   onEditingChange: (editing: boolean) => void;
   /** Toast「点主体」呼出时要求高亮的任务 id（M2-1） */
@@ -36,7 +35,6 @@ export function Panel({
   onDelete,
   onEditTask,
   onReorder,
-  onOpenSettings,
   onCollapse,
   onEditingChange,
   highlightTaskId,
@@ -46,6 +44,8 @@ export function Panel({
   const collapseTimer = useRef<number | null>(null);
   const isEditingRef = useRef(false);
   const [isEditing, setIsEditing] = useState(false);
+  // 设置视图：覆盖在面板内容上（M2-4 反馈后从独立小窗改为面板内嵌）
+  const [showSettings, setShowSettings] = useState(false);
 
   // 当前时刻：面板长开时也要流动，否则概览统计/过期标记/排序会停在挂载瞬间
   const [now, setNow] = useState(() => dayjs());
@@ -146,13 +146,17 @@ export function Panel({
 
   return (
     <main
-      className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)] text-[color:var(--fg)] outline-none"
+      className="relative flex h-full w-full flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)] text-[color:var(--fg)] outline-none"
       onMouseEnter={clearCollapseTimer}
       onMouseLeave={handleMouseLeave}
       ref={panelRef}
       tabIndex={-1}
     >
-      {/* ① 概览区 */}
+      {showSettings ? (
+        <SettingsView onClose={() => setShowSettings(false)} />
+      ) : (
+        <>
+          {/* ① 概览区 */}
       <header className="flex items-baseline justify-between gap-2 pb-2 pl-5 pr-5 pt-4">
         <h1 className="text-xl font-semibold leading-7">
           {formatOverviewDate(now)}
@@ -221,7 +225,7 @@ export function Panel({
           <button
             aria-label="设置"
             className="icon-btn"
-            onClick={onOpenSettings}
+            onClick={() => setShowSettings(true)}
             title="设置"
             type="button"
           >
@@ -229,6 +233,8 @@ export function Panel({
           </button>
         </div>
       </footer>
+        </>
+      )}
     </main>
   );
 }

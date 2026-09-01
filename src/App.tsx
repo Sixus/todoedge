@@ -12,7 +12,6 @@ import {
   applyMaterial,
   MATERIAL_SETTING_KEY,
   normalizeMaterial,
-  type Material,
 } from "./lib/material";
 
 function App() {
@@ -31,22 +30,12 @@ function App() {
   const [highlightTaskId, setHighlightTaskId] = useState<number | null>(null);
   const isTransitioning = useRef(false);
 
-  // 外观材质：启动读持久化值，设置小窗改动后事件即时同步
+  // 外观材质：启动读持久化值（设置视图与面板同文档，改动即时生效，无需跨窗口事件）
   useEffect(() => {
     void api
       .getSetting(MATERIAL_SETTING_KEY)
       .then((value) => applyMaterial(normalizeMaterial(value)))
       .catch(() => undefined);
-    const unlisten = listen<Material>("material-changed", (event) => {
-      applyMaterial(normalizeMaterial(event.payload));
-    });
-    return () => {
-      void unlisten.then((dispose) => dispose());
-    };
-  }, []);
-
-  const openSettings = useCallback(() => {
-    void api.openSettings().catch(() => undefined);
   }, []);
 
   const syncWindowMode = useCallback((mode: WindowMode) => {
@@ -139,7 +128,6 @@ function App() {
       onEditingChange={setPanelEditing}
       onHighlightEnd={clearHighlight}
       onEditTask={editTask}
-      onOpenSettings={openSettings}
       onReorder={reorderTasks}
       onToggle={toggleTask}
       tasks={tasks}
