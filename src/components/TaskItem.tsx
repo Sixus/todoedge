@@ -144,7 +144,7 @@ export function TaskItem({
         }
         className={`icon-btn icon-btn-sm shrink-0 transition-opacity duration-150 focus-visible:opacity-100 ${
           confirmingDelete
-            ? "text-[#c50f1f] opacity-100 hover:text-[#c50f1f]"
+            ? "text-[#c50f1f]! opacity-100 hover:text-[#c50f1f]!"
             : "opacity-0 group-hover:opacity-100"
         }`}
         onClick={handleDeleteClick}
