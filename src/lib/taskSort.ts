@@ -31,8 +31,11 @@ function compareDates(first: string, second: string): number {
 }
 
 /**
- * 分区内排序：双方都有手动顺序（sort_order，拖拽时全分区写入）就按手动序；
+ * 分区内排序：双方都有手动顺序（sort_order，拖拽时同分区全量写入）就按手动序；
  * 任一方没有（如新建任务）则回退默认规则，避免打乱未拖拽清单的既有顺序。
+ * 手动顺序在未完成区内跨桶生效（2026-09-01 反馈：有/无提醒的未完成任务可互相
+ * 拖拽排序，不再按过期/今日/未来与无日期分桶卡位）；已完成仍固定置底，
+ * 与未完成之间不允许手动互排。
  */
 
 /** 按本地时间规则生成清单顺序，原数组不会被修改。 */
@@ -44,17 +47,19 @@ export function sortTasks(tasks: Task[], now = dayjs()): Task[] {
     const firstBucket = getBucket(first, now, todayStart, tomorrowStart);
     const secondBucket = getBucket(second, now, todayStart, tomorrowStart);
 
-    if (firstBucket !== secondBucket) {
-      return firstBucket - secondBucket;
-    }
-
-    // 手动顺序只在同分区内生效（待办/已完成互不越界，docs/05 用户反馈）
+    // 手动顺序只在同分区（都未完成或都已完成）内生效；未完成区内跨桶
     const manualOrder =
-      first.sortOrder !== null && second.sortOrder !== null
+      first.done === second.done &&
+      first.sortOrder !== null &&
+      second.sortOrder !== null
         ? first.sortOrder - second.sortOrder
         : null;
     if (manualOrder !== null && manualOrder !== 0) {
       return manualOrder;
+    }
+
+    if (firstBucket !== secondBucket) {
+      return firstBucket - secondBucket;
     }
 
     if (firstBucket === 0 || firstBucket === 1) {

@@ -4,27 +4,36 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import type { Task } from "../lib/api";
 import { buildReportText, completedInWeek, formatWeekRange, weekStartOf } from "../lib/week";
+import { TrashIcon, XIcon } from "./icons";
 
 interface ReportViewProps {
   tasks: Task[];
+  onDelete: (id: number) => Promise<void>;
   onClose: () => void;
 }
 
 /**
  * 周报视图（docs/01 5.4 节）：点底栏「已完成」进入，弹层覆盖整个面板。
  * ISO 周（周一起始）默认当前周，‹ › 翻历史周；底部一键复制纯文本周报。
+ * 行删除与主界面一致：hover 出 ×，点一次变红垃圾桶，再点才删（2026-09-01 反馈）。
  */
-export function ReportView({ tasks, onClose }: ReportViewProps) {
+export function ReportView({ tasks, onDelete, onClose }: ReportViewProps) {
   // 当前定位周的周一锚点；‹ › 无限翻周
   const [weekStart, setWeekStart] = useState(() => weekStartOf(dayjs()));
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const copiedTimer = useRef<number | null>(null);
+  // 删除二次确认：点一下变红色垃圾桶，再点才删（3 秒不点自动还原）；一次只确认一行
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
+  const confirmTimer = useRef<number | null>(null);
 
   useEffect(
     () => () => {
       if (copiedTimer.current !== null) {
         window.clearTimeout(copiedTimer.current);
+      }
+      if (confirmTimer.current !== null) {
+        window.clearTimeout(confirmTimer.current);
       }
     },
     [],
@@ -45,6 +54,20 @@ export function ReportView({ tasks, onClose }: ReportViewProps) {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
+  }
+
+  function handleDeleteClick(id: number) {
+    if (confirmTimer.current !== null) {
+      window.clearTimeout(confirmTimer.current);
+      confirmTimer.current = null;
+    }
+    if (confirmingId !== id) {
+      setConfirmingId(id);
+      confirmTimer.current = window.setTimeout(() => setConfirmingId(null), 3000);
+      return;
+    }
+    setConfirmingId(null);
+    void onDelete(id);
   }
 
   return (
@@ -81,12 +104,34 @@ export function ReportView({ tasks, onClose }: ReportViewProps) {
         <p className="report-empty">本周还没有完成的任务</p>
       ) : (
         <ul className="report-list task-scroll">
-          {weekTasks.map((task) => (
-            <li className="report-row" key={task.id}>
-              <span className="report-date">{dayjs(task.doneAt as string).format("MM-DD")}</span>
-              <span className="report-row-title">{task.title}</span>
-            </li>
-          ))}
+          {weekTasks.map((task) => {
+            const confirming = confirmingId === task.id;
+            return (
+              <li className="report-row group" key={task.id}>
+                <span className="report-date">{dayjs(task.doneAt as string).format("MM-DD")}</span>
+                <span className="report-row-title">{task.title}</span>
+                <button
+                  aria-label={
+                    confirming ? `再次点击确认删除任务「${task.title}」` : `删除任务「${task.title}」`
+                  }
+                  className={`icon-btn icon-btn-sm shrink-0 transition-opacity duration-150 focus-visible:opacity-100 ${
+                    confirming
+                      ? "text-[#c50f1f]! opacity-100 hover:text-[#c50f1f]!"
+                      : "opacity-0 group-hover:opacity-100"
+                  }`}
+                  onClick={() => handleDeleteClick(task.id)}
+                  title={confirming ? "再次点击确认删除" : "删除任务"}
+                  type="button"
+                >
+                  {confirming ? (
+                    <TrashIcon className="h-[14px] w-[14px]" />
+                  ) : (
+                    <XIcon className="h-[14px] w-[14px]" />
+                  )}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
 

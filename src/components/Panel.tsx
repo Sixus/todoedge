@@ -54,35 +54,6 @@ export function Panel({
   const [showSettings, setShowSettings] = useState(false);
   // 周报视图：点底栏「已完成」覆盖面板（M3-1）
   const [showReport, setShowReport] = useState(false);
-  // 勾选完成后的离场行动画：主清单不再置底展示已完成（去向是周报），
-  // 行打勾+划线后滑出。状态放 Panel 层——reload 会短暂卸载 TaskList，本地状态会丢
-  const [leavingIds, setLeavingIds] = useState<ReadonlySet<number>>(() => new Set());
-  const prevDoneRef = useRef<Map<number, boolean>>(new Map());
-
-  useEffect(() => {
-    const prev = prevDoneRef.current;
-    const newlyDoneIds = tasks
-      .filter((task) => task.done && prev.get(task.id) === false)
-      .map((task) => task.id);
-    prevDoneRef.current = new Map(tasks.map((task) => [task.id, task.done]));
-    if (newlyDoneIds.length === 0) {
-      return;
-    }
-    setLeavingIds((current) => new Set([...current, ...newlyDoneIds]));
-    // 与动画时长（.task-leaving）联动：留出打勾+划线时间再滑出，播完移除
-    for (const id of newlyDoneIds) {
-      window.setTimeout(() => {
-        setLeavingIds((current) => {
-          if (!current.has(id)) {
-            return current;
-          }
-          const next = new Set(current);
-          next.delete(id);
-          return next;
-        });
-      }, 700);
-    }
-  }, [tasks]);
 
   // 图钉激活时清掉已排队的自动收起
   useEffect(() => {
@@ -201,7 +172,7 @@ export function Panel({
       tabIndex={-1}
     >
       {showReport ? (
-        <ReportView onClose={() => setShowReport(false)} tasks={tasks} />
+        <ReportView onClose={() => setShowReport(false)} onDelete={onDelete} tasks={tasks} />
       ) : showSettings ? (
         <SettingsView onClose={() => setShowSettings(false)} />
       ) : (
@@ -249,7 +220,6 @@ export function Panel({
         {!isLoading && !error ? (
           <TaskList
             highlightTaskId={highlightTaskId}
-            leavingIds={leavingIds}
             now={now}
             onHighlightEnd={onHighlightEnd}
             onDelete={onDelete}

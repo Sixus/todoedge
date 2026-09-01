@@ -24,8 +24,6 @@ interface TaskItemProps {
   dropHint: "before" | "after" | null;
   /** 当前行是否为拖拽中的源行 */
   dragging: boolean;
-  /** 勾选完成后的离场行：播完滑出动画后从清单移除（M3-1） */
-  leaving: boolean;
 }
 
 export function TaskItem({
@@ -41,7 +39,6 @@ export function TaskItem({
   onRowPointerUp,
   dropHint,
   dragging,
-  leaving,
 }: TaskItemProps) {
   const overdue = !task.done && !!task.remindAt && isOverdue(task.remindAt, now);
   const timeText = task.remindAt ? formatTaskTime(task.remindAt, now) : null;
@@ -93,9 +90,7 @@ export function TaskItem({
     <li
       className={`group flex min-h-[44px] items-center gap-2 rounded-md px-1.5 transition-colors duration-150 hover:bg-[var(--surface-hover)]${
         highlighted ? " task-highlight" : ""
-      }${dropHint ? ` drop-${dropHint}` : ""}${dragging ? " opacity-50" : ""}${
-        leaving ? " task-leaving" : ""
-      }`}
+      }${dropHint ? ` drop-${dropHint}` : ""}${dragging ? " opacity-50" : ""}`}
       data-task-id={task.id}
       onPointerDown={(event) => onRowPointerDown(task.id, task.done, event)}
       onPointerMove={(event) => onRowPointerMove(task.id, task.done, event)}

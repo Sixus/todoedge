@@ -364,18 +364,6 @@ button {
   box-shadow: inset 0 -2px 0 var(--check-bg);
 }
 
-/* 勾选完成：打勾+划线可见后滑出清单，去向是周报视图（M3-1；总时长与 Panel 的 700ms 移除定时联动） */
-.task-leaving {
-  animation: task-slide-out 280ms ease-in 260ms forwards;
-}
-
-@keyframes task-slide-out {
-  to {
-    opacity: 0;
-    transform: translateX(28px);
-  }
-}
-
 /* 设置视图（M2-4：面板内嵌覆盖层，Windows 11 设置风格卡片行；背景与主面板一致） */
 .settings-overlay {
   position: absolute;
@@ -653,6 +641,12 @@ button {
   align-items: center;
   gap: 10px;
   padding: 0 6px;
+  border-radius: 6px;
+  transition: background-color 150ms ease-out;
+}
+
+.report-row:hover {
+  background: var(--surface-hover);
 }
 
 .report-date {
