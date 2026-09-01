@@ -1,11 +1,14 @@
 /*
- * 外观系统变量：深浅（跟随系统）× 透明/实体（html[data-material="solid"]）
+ * 外观系统变量：深浅（html[data-theme]）× 透明/实体（html[data-material="solid"]）
  * 共 4 组。见 docs/01-产品方案框架-v1.md 第 7 节。
  * 色值取自 docs/design/panel-dark.png / panel-light.png 视觉基准（Fluent 配色）。
  *
- * 矩阵组织：与材质无关的变量（--fg/--danger/--check-bg 等）在 :root 与
- * 深色媒体查询里各写一次、四种组合共用；实体相关的覆盖写在两个
- * [data-material="solid"] 块里。四组合 = (浅|深) × (继承基底|实体覆盖)。
+ * 深浅由 lib/theme.ts 写 data-theme（"dark" 即深色；auto 时按系统解析后写入，
+ * 不再用 prefers-color-scheme 媒体查询，避免手动固定浅色被系统深色覆盖）。
+ *
+ * 矩阵组织：与材质无关的变量（--fg/--danger/--check-bg 等）在浅色基底与
+ * [data-theme="dark"] 块里各写一次；实体相关的覆盖写在两个 [data-material] 块里。
+ * 四组合 = (浅基底|深色块) × (无覆盖|实体覆盖)，块按此顺序排列保证深色实体最优先。
  * 实体模式要求不透明：面板/弹层背景用纯色，细条不再半透明（M3-2）。
  */
 :root {
@@ -54,46 +57,45 @@
   --strip-opacity: 1;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
+/* 深色（手动或跟随系统由 data-theme 决定，见文件头注释） */
+:root[data-theme="dark"] {
+  color-scheme: dark;
 
-    /* 面板容器（透明度 70%，用户反馈调优） */
-    --bg: rgba(32, 32, 32, 0.7);
-    --fg: #ffffff;
-    --fg-muted: #adadad;
-    --fg-faint: #999999;
-    --border: rgba(255, 255, 255, 0.16);
-    --border-subtle: rgba(255, 255, 255, 0.1);
-    --surface-hover: rgba(255, 255, 255, 0.08);
-    --scrollbar-thumb: rgba(255, 255, 255, 0.2);
+  /* 面板容器（透明度 70%，用户反馈调优） */
+  --bg: rgba(32, 32, 32, 0.7);
+  --fg: #ffffff;
+  --fg-muted: #adadad;
+  --fg-faint: #999999;
+  --border: rgba(255, 255, 255, 0.16);
+  --border-subtle: rgba(255, 255, 255, 0.1);
+  --surface-hover: rgba(255, 255, 255, 0.08);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.2);
 
-    /* 新建任务输入框 */
-    --input-bg: rgba(0, 0, 0, 0.22);
-    --input-border: rgba(255, 255, 255, 0.36);
-    --input-focus: #479ef5;
-    --disabled-bg: rgba(0, 0, 0, 0.22);
+  /* 新建任务输入框 */
+  --input-bg: rgba(0, 0, 0, 0.22);
+  --input-border: rgba(255, 255, 255, 0.36);
+  --input-focus: #479ef5;
+  --disabled-bg: rgba(0, 0, 0, 0.22);
 
-    /* 任务行 */
-    --checkbox-border: #adadad;
-    --check-bg: #2899f5;
-    --check-fg: #ffffff;
-    --done-fg: #999999;
-    --danger: #e96975;
+  /* 任务行 */
+  --checkbox-border: #adadad;
+  --check-bg: #2899f5;
+  --check-fg: #ffffff;
+  --done-fg: #999999;
+  --danger: #e96975;
 
-    /* 提醒时间选择弹层（M2-3，实体小卡片保证可读性） */
-    --pop-bg: #2c2c2c;
-    --pop-border: rgba(255, 255, 255, 0.12);
-    --pop-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
-  }
+  /* 提醒时间选择弹层（M2-3，实体小卡片保证可读性） */
+  --pop-bg: #2c2c2c;
+  --pop-border: rgba(255, 255, 255, 0.12);
+  --pop-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+}
 
-  :root[data-material="solid"] {
-    --bg: #202020;
-    --surface-hover: #2c2c2c;
-    --input-bg: #333333;
-    --disabled-bg: #2a2a2a;
-    /* 细条实体化：不透明中性灰，不再随桌面透色 */
-    --strip-bg: #5a5a5a;
-    --strip-opacity: 1;
-  }
+:root[data-theme="dark"][data-material="solid"] {
+  --bg: #202020;
+  --surface-hover: #2c2c2c;
+  --input-bg: #333333;
+  --disabled-bg: #2a2a2a;
+  /* 细条实体化：不透明中性灰，不再随桌面透色 */
+  --strip-bg: #5a5a5a;
+  --strip-opacity: 1;
 }

@@ -9,6 +9,12 @@ import {
   SNOOZE_SETTING_KEY,
   type Material,
 } from "../lib/material";
+import {
+  applyTheme,
+  normalizeTheme,
+  THEME_SETTING_KEY,
+  type ThemeMode,
+} from "../lib/theme";
 
 interface SettingsViewProps {
   onClose: () => void;
@@ -25,6 +31,7 @@ function errorMessage(error: unknown): string {
  */
 export function SettingsView({ onClose }: SettingsViewProps) {
   const [material, setMaterial] = useState<Material>("glass");
+  const [theme, setTheme] = useState<ThemeMode>("auto");
   const [snoozeMinutes, setSnoozeMinutes] = useState("10");
   const [animations, setAnimations] = useState(true);
   const [autostart, setAutostart] = useState(false);
@@ -37,6 +44,7 @@ export function SettingsView({ onClose }: SettingsViewProps) {
         const savedMaterial = normalizeMaterial(await api.getSetting(MATERIAL_SETTING_KEY));
         setMaterial(savedMaterial);
         applyMaterial(savedMaterial);
+        setTheme(normalizeTheme(await api.getSetting(THEME_SETTING_KEY)));
         const savedSnooze = await api.getSetting(SNOOZE_SETTING_KEY);
         if (savedSnooze !== null && savedSnooze !== "") {
           setSnoozeMinutes(savedSnooze);
@@ -55,6 +63,15 @@ export function SettingsView({ onClose }: SettingsViewProps) {
     setMaterial(next);
     applyMaterial(next);
     void api.setSetting(MATERIAL_SETTING_KEY, next).catch((cause) => {
+      setError(errorMessage(cause));
+    });
+  }, []);
+
+  // 深浅模式（auto/light/dark）：applyTheme 即时切换，auto 时由 lib/theme.ts 跟随系统
+  const changeTheme = useCallback((next: ThemeMode) => {
+    setTheme(next);
+    applyTheme(next);
+    void api.setSetting(THEME_SETTING_KEY, next).catch((cause) => {
       setError(errorMessage(cause));
     });
   }, []);
@@ -133,6 +150,42 @@ export function SettingsView({ onClose }: SettingsViewProps) {
             type="button"
           >
             实体
+          </button>
+        </div>
+      </div>
+
+      <div className="settings-row">
+        <div className="settings-text">
+          <p className="settings-label">深浅模式</p>
+          <p className="settings-desc">跟随 Windows 深浅色，或手动固定</p>
+        </div>
+        <div className="settings-segment" role="radiogroup" aria-label="深浅模式">
+          <button
+            aria-checked={theme === "auto"}
+            className={theme === "auto" ? "active" : ""}
+            onClick={() => changeTheme("auto")}
+            role="radio"
+            type="button"
+          >
+            跟随系统
+          </button>
+          <button
+            aria-checked={theme === "light"}
+            className={theme === "light" ? "active" : ""}
+            onClick={() => changeTheme("light")}
+            role="radio"
+            type="button"
+          >
+            浅色
+          </button>
+          <button
+            aria-checked={theme === "dark"}
+            className={theme === "dark" ? "active" : ""}
+            onClick={() => changeTheme("dark")}
+            role="radio"
+            type="button"
+          >
+            深色
           </button>
         </div>
       </div>

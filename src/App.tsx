@@ -14,6 +14,7 @@ import {
   MATERIAL_SETTING_KEY,
   normalizeMaterial,
 } from "./lib/material";
+import { applyTheme, normalizeTheme, THEME_SETTING_KEY } from "./lib/theme";
 
 const PINNED_SETTING_KEY = "pinned";
 
@@ -49,6 +50,11 @@ function App() {
     void api
       .getSetting(PINNED_SETTING_KEY)
       .then((value) => setPinned(value === "1"))
+      .catch(() => undefined);
+    // 深浅模式：auto 跟随系统 / 手动浅深，启动恢复（lib/theme.ts 内部已监听系统变化）
+    void api
+      .getSetting(THEME_SETTING_KEY)
+      .then((value) => applyTheme(normalizeTheme(value)))
       .catch(() => undefined);
   }, []);
 
