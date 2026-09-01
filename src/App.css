@@ -35,18 +35,25 @@ button {
   color: inherit;
 }
 
-/* 收起态细条 */
+/* 收起态细条（M3-4：可按住上下拖动） */
 .edge-strip {
   width: 6px;
   height: 100%;
   border-radius: 999px;
   background: var(--strip-bg);
-  cursor: pointer;
+  cursor: grab;
   opacity: var(--strip-opacity);
   transition: opacity 120ms ease-out;
+  touch-action: none;
+  user-select: none;
 }
 
 .edge-strip:hover {
+  opacity: 0.94;
+}
+
+.edge-strip.dragging {
+  cursor: grabbing;
   opacity: 0.94;
 }
 
@@ -526,6 +533,27 @@ button {
 .settings-switch:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* 设置行内普通按钮（细条位置重置） */
+.settings-reset {
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--fg);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease-out,
+    background-color 120ms ease-out;
+}
+
+.settings-reset:hover {
+  border-color: var(--input-focus);
+  background: var(--surface-hover);
 }
 
 /* 图标按钮（底栏 32px / 输入框内 24px 两档） */

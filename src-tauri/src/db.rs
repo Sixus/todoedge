@@ -1,6 +1,6 @@
 use std::{fs, path::Path, sync::Mutex};
 
-use rusqlite::Connection;
+use rusqlite::{params, Connection, OptionalExtension};
 
 /// 全应用唯一的数据库连接，挂在 Tauri State 上（见 docs/02 第 4.2 节数据流）。
 pub struct Db(pub Mutex<Connection>);
@@ -18,6 +18,28 @@ impl Db {
         migrate(&conn)?;
         Ok(Db(Mutex::new(conn)))
     }
+}
+
+/// 读单个设置项；无该行返回 None。
+pub fn setting_get(conn: &Connection, key: &str) -> Result<Option<String>, String> {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        params![key],
+        |r| r.get(0),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+/// 写单个设置项（不存在则插入）。
+pub fn setting_set(conn: &Connection, key: &str, value: &str) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![key, value],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// 自管迁移：schema_version 表记录已应用到的版本，逐个补跑未应用的迁移。

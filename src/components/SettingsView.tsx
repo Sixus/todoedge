@@ -88,6 +88,13 @@ export function SettingsView({ onClose }: SettingsViewProps) {
       .finally(() => setAutostartPending(false));
   }, []);
 
+  // 细条位置重置（M3-4）：回垂直居中并落库，Rust 侧就地挪窗口，看细条即见效果
+  const resetStripPosition = useCallback(() => {
+    void api.resetStripPosition().catch((cause) => {
+      setError(errorMessage(cause));
+    });
+  }, []);
+
   return (
     <div className="settings-overlay">
       <header className="settings-header">
@@ -163,6 +170,22 @@ export function SettingsView({ onClose }: SettingsViewProps) {
           role="switch"
           type="button"
         />
+      </div>
+
+      <div className="settings-row">
+        <div className="settings-text">
+          <p className="settings-label">细条位置</p>
+          <p className="settings-desc">按住屏幕右缘细条上下拖动；重置后回到垂直居中</p>
+        </div>
+        <button
+          aria-label="细条位置重置"
+          className="settings-reset"
+          onClick={resetStripPosition}
+          title="回到垂直居中"
+          type="button"
+        >
+          重置
+        </button>
       </div>
 
       <div className="settings-row">

@@ -39,4 +39,11 @@ export const api = {
   collapsePanel: () => invoke<WindowMode>("collapse_panel"),
   setPanelEditing: (editing: boolean) =>
     invoke<void>("set_panel_editing", { editing }),
+  /** 拖动细条：把指针位移增量（逻辑像素）交给 Rust 移动窗口 y（x 恒贴右缘），不落库 */
+  moveStripWindow: (deltaY: number) =>
+    invoke<void>("move_strip_window", { deltaY }),
+  /** 拖动结束：把当前细条垂直比例写入 settings */
+  persistStripPosition: () => invoke<void>("persist_strip_position"),
+  /** 设置里的重置：细条回垂直居中并落库 */
+  resetStripPosition: () => invoke<void>("reset_strip_position"),
 };

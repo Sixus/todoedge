@@ -6,7 +6,7 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 use tauri_plugin_autostart::ManagerExt;
 
-use crate::{db::Db, window_ctl::WindowCtlState};
+use crate::{db::{self, Db}, window_ctl::WindowCtlState};
 
 /// 传给前端的任务结构：camelCase 字段，时间一律 RFC3339 字符串（UTC）。
 #[derive(Serialize)]
@@ -211,25 +211,13 @@ pub fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
 #[tauri::command]
 pub fn get_setting(db: State<Db>, key: String) -> Result<Option<String>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    conn.query_row(
-        "SELECT value FROM settings WHERE key = ?1",
-        params![key],
-        |r| r.get(0),
-    )
-    .optional()
-    .map_err(|e| e.to_string())
+    db::setting_get(&conn, &key)
 }
 
 #[tauri::command]
 pub fn set_setting(db: State<Db>, key: String, value: String) -> Result<(), String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    conn.execute(
-        "INSERT INTO settings (key, value) VALUES (?1, ?2)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        params![key, value],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(())
+    db::setting_set(&conn, &key, &value)
 }
 
 #[cfg(test)]
