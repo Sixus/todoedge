@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { DragEvent, MouseEvent } from "react";
+import type { MouseEvent, PointerEvent } from "react";
 import type { Dayjs } from "dayjs";
 
 import { formatTaskTime, isOverdue } from "../lib/format";
@@ -16,13 +16,14 @@ interface TaskItemProps {
   onDelete: (id: number) => Promise<void>;
   /** 编辑任务标题 + 提醒时间（null = 清除提醒） */
   onEditTask: (id: number, title: string, remindAt: string | null) => Promise<void>;
-  /** 拖拽排序（由 TaskList 编排，跨分区拖放在上层被忽略） */
-  onDragStartItem: (id: number) => void;
-  onDragOverItem: (id: number, done: boolean, event: DragEvent<HTMLLIElement>) => void;
-  onDropItem: (id: number, done: boolean) => void;
-  onDragEndItem: () => void;
+  /** 手动排序（Pointer Events 自实现，TaskList 编排；跨分区忽略） */
+  onRowPointerDown: (id: number, done: boolean, event: PointerEvent<HTMLLIElement>) => void;
+  onRowPointerMove: (id: number, done: boolean, event: PointerEvent<HTMLLIElement>) => void;
+  onRowPointerUp: (id: number, done: boolean) => void;
   /** 当前行显示的插入位置提示 */
   dropHint: "before" | "after" | null;
+  /** 当前行是否为拖拽中的源行 */
+  dragging: boolean;
 }
 
 export function TaskItem({
@@ -33,11 +34,11 @@ export function TaskItem({
   onToggle,
   onDelete,
   onEditTask,
-  onDragStartItem,
-  onDragOverItem,
-  onDropItem,
-  onDragEndItem,
+  onRowPointerDown,
+  onRowPointerMove,
+  onRowPointerUp,
   dropHint,
+  dragging,
 }: TaskItemProps) {
   const overdue = !task.done && !!task.remindAt && isOverdue(task.remindAt, now);
   const timeText = task.remindAt ? formatTaskTime(task.remindAt, now) : null;
@@ -85,22 +86,16 @@ export function TaskItem({
     void onDelete(task.id);
   }
 
-  function handleDragStart(event: DragEvent<HTMLLIElement>) {
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", String(task.id));
-    onDragStartItem(task.id);
-  }
-
   return (
     <li
       className={`group flex min-h-[44px] items-center gap-2 rounded-md px-1.5 transition-colors duration-150 hover:bg-[var(--surface-hover)]${
         highlighted ? " task-highlight" : ""
-      }${dropHint ? ` drop-${dropHint}` : ""}`}
-      draggable
-      onDragEnd={onDragEndItem}
-      onDragOver={(event) => onDragOverItem(task.id, task.done, event)}
-      onDragStart={handleDragStart}
-      onDrop={() => onDropItem(task.id, task.done)}
+      }${dropHint ? ` drop-${dropHint}` : ""}${dragging ? " opacity-50" : ""}`}
+      data-task-id={task.id}
+      onPointerDown={(event) => onRowPointerDown(task.id, task.done, event)}
+      onPointerMove={(event) => onRowPointerMove(task.id, task.done, event)}
+      onPointerUp={() => onRowPointerUp(task.id, task.done)}
+      onPointerCancel={() => onRowPointerUp(task.id, task.done)}
       ref={itemRef}
     >
       <label className="task-check" title={task.done ? "标记未完成" : "标记完成"}>

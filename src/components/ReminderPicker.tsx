@@ -52,9 +52,10 @@ export function ReminderPicker({
 }: ReminderPickerProps) {
   const editMode = initialTitle !== undefined;
   const initialDay = initial ? dayjs(initial) : null;
+  // 默认选中接下来最近的半点：9:52 → 10:00（不额外加一小时）
   const defaultDay = initialDay
     ? ceilToHalfHour(initialDay)
-    : ceilToHalfHour(dayjs().add(1, "hour"));
+    : ceilToHalfHour(dayjs());
   const [dateStr, setDateStr] = useState(defaultDay.format("YYYY-MM-DD"));
   const [timeStr, setTimeStr] = useState(defaultDay.format("HH:mm"));
   const [viewMonth, setViewMonth] = useState(() => defaultDay.startOf("month"));

@@ -1,5 +1,4 @@
-import { useState } from "react";
-import type { DragEvent } from "react";
+import { useRef, useState } from "react";
 import type { Dayjs } from "dayjs";
 
 import type { Task } from "../lib/api";
@@ -20,6 +19,19 @@ interface TaskListProps {
   onHighlightEnd: () => void;
 }
 
+interface DragState {
+  id: number;
+  done: boolean;
+  startY: number;
+  /** 位移超过阈值后才算拖拽，避免与点击冲突 */
+  active: boolean;
+}
+
+/**
+ * 手动排序：Pointer Events 自实现（HTML5 drag & drop 在 NOACTIVATE 窗口和
+ * 云桌面环境下事件不可靠，2026-09-01 反馈拖不动）。按住行的空白/标题区拖动，
+ * 跨待办/已完成分区的拖放一律忽略。
+ */
 export function TaskList({
   tasks,
   now,
@@ -35,51 +47,96 @@ export function TaskList({
   const [dropHint, setDropHint] = useState<{ id: number; position: DropPosition } | null>(
     null,
   );
+  // dropHint 的镜像引用：pointerup 落定时读取最新值，不依赖渲染闭包
+  const dropHintRef = useRef<{ id: number; position: DropPosition } | null>(null);
+  const dragRef = useRef<DragState | null>(null);
 
-  function clearDrag() {
-    setDragId(null);
-    setDropHint(null);
-  }
-
-  /** 只允许同分区内拖动：跨待办/已完成边界的拖放一律忽略 */
-  function sameBucket(targetDone: boolean): boolean {
-    if (dragId === null) {
-      return false;
-    }
-    const dragTask = tasks.find((task) => task.id === dragId);
-    return dragTask !== undefined && dragTask.done === targetDone;
-  }
-
-  function handleDragOver(targetId: number, targetDone: boolean, event: DragEvent<HTMLLIElement>) {
-    if (dragId === null || dragId === targetId || !sameBucket(targetDone)) {
+  /** 按下：记录候选拖拽（交互控件上不启动）；指针捕获保证后续 move/up 不丢 */
+  function handleRowPointerDown(
+    id: number,
+    done: boolean,
+    event: React.PointerEvent<HTMLLIElement>,
+  ) {
+    if (event.button !== 0) {
       return;
     }
+    const target = event.target as HTMLElement;
+    if (target.closest("button, input, a, label")) {
+      return;
+    }
+    event.preventDefault(); // 抑制拖动时的文本选择
+    dragRef.current = { id, done, startY: event.clientY, active: false };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  /** 移动：超过阈值进入拖拽；用 elementFromPoint 命中测试悬停的目标行 */
+  function handleRowPointerMove(
+    id: number,
+    done: boolean,
+    event: React.PointerEvent<HTMLLIElement>,
+  ) {
+    const state = dragRef.current;
+    if (!state || state.id !== id) {
+      return;
+    }
+    if (!state.active) {
+      if (Math.abs(event.clientY - state.startY) < 5) {
+        return;
+      }
+      state.active = true;
+      setDragId(id);
+    }
     event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    const rect = event.currentTarget.getBoundingClientRect();
+
+    const hit = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest("li[data-task-id]");
+    if (!hit) {
+      setDropHint(null);
+      return;
+    }
+    const targetId = Number(hit.getAttribute("data-task-id"));
+    if (!Number.isInteger(targetId) || targetId === id) {
+      setDropHint(null);
+      return;
+    }
+    const targetTask = tasks.find((task) => task.id === targetId);
+    if (!targetTask || targetTask.done !== done) {
+      setDropHint(null); // 跨分区：不给落点提示
+      return;
+    }
+    const rect = hit.getBoundingClientRect();
     const position: DropPosition =
       event.clientY < rect.top + rect.height / 2 ? "before" : "after";
-    if (dropHint?.id !== targetId || dropHint.position !== position) {
+    if (dropHintRef.current?.id !== targetId || dropHintRef.current.position !== position) {
+      dropHintRef.current = { id: targetId, position };
       setDropHint({ id: targetId, position });
     }
   }
 
-  function handleDrop(targetId: number, targetDone: boolean) {
-    const position = dropHint?.id === targetId ? dropHint.position : null;
-    clearDrag();
-    if (dragId === null || dragId === targetId || position === null) {
+  /** 抬起：拖拽已激活且悬停在同分区行上则落定新顺序 */
+  function handleRowPointerUp(id: number, done: boolean) {
+    const state = dragRef.current;
+    const wasActive = state?.active ?? false;
+    const hint = dropHintRef.current;
+    dragRef.current = null;
+    dropHintRef.current = null;
+    setDragId(null);
+    setDropHint(null);
+    if (!wasActive || !hint || state?.id !== id) {
       return;
     }
-    if (!sameBucket(targetDone)) {
+    const targetTask = tasks.find((task) => task.id === hint.id);
+    if (!targetTask || targetTask.done !== done) {
       return;
     }
 
     // 基于当前显示顺序重排所在分区，另一个分区原样保留
     const pendingIds = sortedTasks.filter((task) => !task.done).map((task) => task.id);
     const doneIds = sortedTasks.filter((task) => task.done).map((task) => task.id);
-    const bucket = targetDone ? doneIds : pendingIds;
-    bucket.splice(bucket.indexOf(dragId), 1);
-    bucket.splice(bucket.indexOf(targetId) + (position === "after" ? 1 : 0), 0, dragId);
+    const bucket = done ? doneIds : pendingIds;
+    bucket.splice(bucket.indexOf(id), 1);
+    bucket.splice(bucket.indexOf(hint.id) + (hint.position === "after" ? 1 : 0), 0, id);
     onReorder([...pendingIds, ...doneIds]);
   }
 
@@ -106,11 +163,11 @@ export function TaskList({
           key={task.id}
           now={now}
           highlighted={task.id === highlightTaskId}
+          dragging={task.id === dragId}
           dropHint={hintFor(task)}
-          onDragEndItem={clearDrag}
-          onDragOverItem={handleDragOver}
-          onDragStartItem={setDragId}
-          onDropItem={handleDrop}
+          onRowPointerDown={handleRowPointerDown}
+          onRowPointerMove={handleRowPointerMove}
+          onRowPointerUp={handleRowPointerUp}
           onHighlightEnd={onHighlightEnd}
           onDelete={onDelete}
           onEditTask={onEditTask}
