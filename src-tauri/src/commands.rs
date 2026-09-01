@@ -27,6 +27,14 @@ fn now_utc() -> String {
     Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
+/// 提醒时间是否已经过去（新建/改期用）。解析失败按未过期处理——
+/// 调度器对解析失败的行本就跳过不弹。
+fn remind_at_is_past(remind_at: &str) -> bool {
+    chrono::DateTime::parse_from_rfc3339(remind_at)
+        .map(|time| time.with_timezone(&Utc) <= Utc::now())
+        .unwrap_or(false)
+}
+
 fn row_to_task(row: &Row) -> rusqlite::Result<Task> {
     Ok(Task {
         id: row.get("id")?,
@@ -70,9 +78,15 @@ pub fn list_tasks(db: State<Db>) -> Result<Vec<Task>, String> {
 #[tauri::command]
 pub fn add_task(db: State<Db>, title: String, remind_at: Option<String>) -> Result<Task, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    // 生来已过期的提醒（设了过去的时间）直接标已通知：只进面板过期态（红字+置顶），
+    // 不弹 Toast（docs/01 第 4.1 节过期态语义，2026-09-01 反馈）
+    let notified = remind_at
+        .as_deref()
+        .map(|text| i64::from(remind_at_is_past(text)))
+        .unwrap_or(0);
     conn.execute(
-        "INSERT INTO tasks (title, remind_at, created_at) VALUES (?1, ?2, ?3)",
-        params![title, remind_at, now_utc()],
+        "INSERT INTO tasks (title, remind_at, notified, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![title, remind_at, notified, now_utc()],
     )
     .map_err(|e| e.to_string())?;
     task_by_id(&conn, conn.last_insert_rowid())
@@ -131,10 +145,12 @@ pub fn update_task(
         .map_err(|e| e.to_string())?;
     }
     if let Some(remind_at) = remind_at {
+        // 改期即重新进入调度（docs/01 第 4.1 节）；改成的时刻已过则视为生来过期，
+        // 直接标已通知只显示过期态，不弹 Toast（2026-09-01 反馈）
+        let notified = i64::from(remind_at_is_past(&remind_at));
         conn.execute(
-            // 改期即重新进入调度（docs/01 第 4.1 节），否则改过的提醒不会再弹
-            "UPDATE tasks SET remind_at = ?2, notified = 0 WHERE id = ?1",
-            params![id, remind_at],
+            "UPDATE tasks SET remind_at = ?2, notified = ?3 WHERE id = ?1",
+            params![id, remind_at, notified],
         )
         .map_err(|e| e.to_string())?;
     }
@@ -214,4 +230,26 @@ pub fn set_setting(db: State<Db>, key: String, value: String) -> Result<(), Stri
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remind_at_is_past;
+    use chrono::Utc;
+
+    #[test]
+    fn 生来过期判断() {
+        use chrono::SecondsFormat;
+        let past = (Utc::now() - chrono::Duration::minutes(5))
+            .to_rfc3339_opts(SecondsFormat::Secs, true);
+        let future = (Utc::now() + chrono::Duration::minutes(5))
+            .to_rfc3339_opts(SecondsFormat::Secs, true);
+        // 前端可能传带毫秒的 ISO 字符串
+        let past_with_millis = (Utc::now() - chrono::Duration::minutes(1))
+            .to_rfc3339_opts(SecondsFormat::Millis, true);
+        assert!(remind_at_is_past(&past));
+        assert!(remind_at_is_past(&past_with_millis));
+        assert!(!remind_at_is_past(&future));
+        assert!(!remind_at_is_past("not-a-time"));
+    }
 }

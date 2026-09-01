@@ -37,7 +37,7 @@ mod imp {
     use std::sync::{mpsc, Arc, Mutex, OnceLock, Weak};
     use std::time::{Duration, Instant};
 
-    use chrono::{DateTime, SecondsFormat, Utc};
+    use chrono::{SecondsFormat, Utc};
     use rusqlite::params;
     use tauri::{AppHandle, Emitter, Manager};
     use windows::core::{IInspectable, Interface, HSTRING};
@@ -208,8 +208,8 @@ mod imp {
     }
 
     /// 按激活参数路由三种来源（docs/05 任务卡 M2-1）：
-    /// done → 标记完成并刷新前端（不弹面板）；snooze → remind_at += 间隔并
-    /// 重置 notified 重新进入调度；open → 通知前端呼出面板并高亮。
+    /// done → 标记完成并刷新前端（不弹面板）；snooze → 提醒时间改为当前时刻+间隔
+    /// 并重置 notified 重新进入调度；open → 通知前端呼出面板并高亮。
     /// 参数无法解析时（个别系统版本对激活回调传空参数）兜底按「点主体」处理。
     fn route_activated(app: &AppHandle, task_id: i64, arguments: &str) {
         let (kind, id) = parse_arguments(arguments).unwrap_or((ArgKind::Open, task_id));
@@ -231,25 +231,9 @@ mod imp {
             }
             ArgKind::Snooze => {
                 let minutes = snooze_minutes(app);
-                // docs/01 第 4.1 节：自原提醒时间 +10min（原值读不出时退回当前时刻）
-                let base = {
-                    let db = app.state::<Db>();
-                    let conn = db.0.lock().expect("数据库锁已损坏");
-                    conn.query_row(
-                        "SELECT remind_at FROM tasks WHERE id = ?1",
-                        params![id],
-                        |row| row.get::<_, Option<String>>(0),
-                    )
-                    .ok()
-                    .flatten()
-                    .and_then(|text| {
-                        DateTime::parse_from_rfc3339(&text)
-                            .ok()
-                            .map(|parsed| parsed.into())
-                    })
-                    .unwrap_or_else(Utc::now)
-                };
-                let remind_at = (base + chrono::Duration::minutes(minutes))
+                // 从当前时刻起算间隔（2026-09-01 反馈）：原实现自原提醒时间 +间隔，
+                // 对启动补弹的过期通知会得到仍在过去的时刻，立刻重弹成死循环
+                let remind_at = (Utc::now() + chrono::Duration::minutes(minutes))
                     .to_rfc3339_opts(SecondsFormat::Secs, true);
                 let db = app.state::<Db>();
                 let conn = db.0.lock().expect("数据库锁已损坏");
