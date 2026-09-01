@@ -556,6 +556,17 @@ button {
   background: var(--surface-hover);
 }
 
+/* 热键录入按钮：定宽避免录入态文字变化跳动 */
+.hotkey-recorder {
+  min-width: 110px;
+  text-align: center;
+}
+
+.hotkey-recorder.recording {
+  border-color: var(--input-focus);
+  color: var(--input-focus);
+}
+
 /* 图标按钮（底栏 32px / 输入框内 24px 两档） */
 .icon-btn {
   display: flex;

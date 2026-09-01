@@ -2,6 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../lib/api";
 import {
+  DEFAULT_HOTKEY,
+  HOTKEY_SETTING_KEY,
+  buildHotkeyCombo,
+  formatHotkey,
+  hasUsableModifier,
+  isModifierCode,
+} from "../lib/hotkey";
+import {
   ANIMATIONS_SETTING_KEY,
   applyMaterial,
   MATERIAL_SETTING_KEY,
@@ -32,6 +40,8 @@ function errorMessage(error: unknown): string {
 export function SettingsView({ onClose }: SettingsViewProps) {
   const [material, setMaterial] = useState<Material>("glass");
   const [theme, setTheme] = useState<ThemeMode>("auto");
+  const [hotkey, setHotkey] = useState(DEFAULT_HOTKEY);
+  const [recording, setRecording] = useState(false);
   const [snoozeMinutes, setSnoozeMinutes] = useState("10");
   const [animations, setAnimations] = useState(true);
   const [autostart, setAutostart] = useState(false);
@@ -51,6 +61,7 @@ export function SettingsView({ onClose }: SettingsViewProps) {
         }
         const savedAnimations = await api.getSetting(ANIMATIONS_SETTING_KEY);
         setAnimations(savedAnimations !== "0");
+        setHotkey((await api.getSetting(HOTKEY_SETTING_KEY)) ?? DEFAULT_HOTKEY);
         setAutostart(await api.autostartStatus());
       } catch (cause) {
         setError(errorMessage(cause));
@@ -75,6 +86,50 @@ export function SettingsView({ onClose }: SettingsViewProps) {
       setError(errorMessage(cause));
     });
   }, []);
+
+  // 热键录入（M3-3）：进入录入态后捕获下一个按键组合交给 Rust 注册；
+  // 注册失败（被占用）时提示，旧热键原样保留（Rust 侧未变更）
+  useEffect(() => {
+    if (!recording) {
+      return;
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.code === "Escape") {
+        setRecording(false);
+        return;
+      }
+      // 纯修饰键单按不构成组合，继续等待
+      if (isModifierCode(event.code)) {
+        return;
+      }
+      const combo = buildHotkeyCombo(
+        event.code,
+        event.ctrlKey,
+        event.altKey,
+        event.shiftKey,
+        event.metaKey,
+      );
+      setRecording(false);
+      // 简单校验：至少带 Ctrl/Alt/Win 之一——Shift 单独等价普通打字，全局劫持不合适
+      if (!hasUsableModifier(combo)) {
+        setError("热键至少要带 Ctrl、Alt 或 Win 键");
+        return;
+      }
+      void api
+        .setGlobalHotkey(combo)
+        .then((saved) => setHotkey(saved))
+        .catch(() => setError("热键注册失败（可能被其他程序占用），已保留原热键"));
+    }
+    const cancel = () => setRecording(false);
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("blur", cancel);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("blur", cancel);
+    };
+  }, [recording]);
 
   const changeSnooze = useCallback((value: string) => {
     setSnoozeMinutes(value);
@@ -238,6 +293,23 @@ export function SettingsView({ onClose }: SettingsViewProps) {
           type="button"
         >
           重置
+        </button>
+      </div>
+
+      <div className="settings-row">
+        <div className="settings-text">
+          <p className="settings-label">全局热键</p>
+          <p className="settings-desc">任何界面呼出 / 收起面板；点击右侧后按新组合键（Esc 取消）</p>
+        </div>
+        <button
+          aria-label="录入全局热键"
+          className={
+            recording ? "settings-reset hotkey-recorder recording" : "settings-reset hotkey-recorder"
+          }
+          onClick={() => setRecording(true)}
+          type="button"
+        >
+          {recording ? "请按下组合键…" : formatHotkey(hotkey)}
         </button>
       </div>
 

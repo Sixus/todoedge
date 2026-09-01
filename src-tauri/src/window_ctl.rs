@@ -57,6 +57,17 @@ impl Default for WindowCtlState {
 }
 
 impl WindowCtlState {
+    /// 当前是否展开态（全局热键切换用）
+    pub fn is_expanded(&self) -> bool {
+        matches!(
+            *self
+                .mode
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+            WindowMode::Expanded
+        )
+    }
+
     pub fn strip_center_ratio(&self) -> f64 {
         f64::from_bits(self.strip_center_ratio.load(Ordering::Acquire))
     }
@@ -251,15 +262,29 @@ pub fn initialize(window: &WebviewWindow, state: &Arc<WindowCtlState>) -> Result
     Ok(())
 }
 
+fn expand_inner(window: &WebviewWindow, state: &Arc<WindowCtlState>) -> Result<WindowMode, String> {
+    if state.is_fullscreen.load(Ordering::Acquire) {
+        return set_mode(window, state, WindowMode::Collapsed, false);
+    }
+    set_mode(window, state, WindowMode::Expanded, true)
+}
+
+fn collapse_inner(window: &WebviewWindow, state: &Arc<WindowCtlState>) -> Result<WindowMode, String> {
+    state.is_editing.store(false, Ordering::Release);
+    set_mode(
+        window,
+        state,
+        WindowMode::Collapsed,
+        !state.is_fullscreen.load(Ordering::Acquire),
+    )
+}
+
 #[tauri::command]
 pub fn expand_panel(
     window: WebviewWindow,
     state: State<'_, Arc<WindowCtlState>>,
 ) -> Result<WindowMode, String> {
-    if state.is_fullscreen.load(Ordering::Acquire) {
-        return set_mode(&window, state.inner(), WindowMode::Collapsed, false);
-    }
-    set_mode(&window, state.inner(), WindowMode::Expanded, true)
+    expand_inner(&window, state.inner())
 }
 
 #[tauri::command]
@@ -267,13 +292,19 @@ pub fn collapse_panel(
     window: WebviewWindow,
     state: State<'_, Arc<WindowCtlState>>,
 ) -> Result<WindowMode, String> {
-    state.is_editing.store(false, Ordering::Release);
-    set_mode(
-        &window,
-        state.inner(),
-        WindowMode::Collapsed,
-        !state.is_fullscreen.load(Ordering::Acquire),
-    )
+    collapse_inner(&window, state.inner())
+}
+
+/// 全局热键切换（M3-3）：展开↔收起；全屏时 expand_inner 自会保持隐藏不弹
+pub fn toggle_panel(
+    window: &WebviewWindow,
+    state: &Arc<WindowCtlState>,
+) -> Result<WindowMode, String> {
+    if state.is_expanded() {
+        collapse_inner(window, state)
+    } else {
+        expand_inner(window, state)
+    }
 }
 
 #[tauri::command]

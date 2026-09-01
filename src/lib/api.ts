@@ -46,4 +46,7 @@ export const api = {
   persistStripPosition: () => invoke<void>("persist_strip_position"),
   /** 设置里的重置：细条回垂直居中并落库 */
   resetStripPosition: () => invoke<void>("reset_strip_position"),
+  /** 设置全局热键（如 "Ctrl+Alt+KeyT"）；注册成功才落库并回显，失败 Err 且旧热键保持 */
+  setGlobalHotkey: (hotkey: string) =>
+    invoke<string>("set_global_hotkey", { hotkey }),
 };

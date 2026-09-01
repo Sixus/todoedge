@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod hotkey;
 mod scheduler;
 mod toast;
 mod window_ctl;
@@ -17,6 +18,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(hotkey::plugin())
         .setup(|app| {
             // 数据库放 {app_data_dir}/todoedge/todo.db（docs/02 第 4.2 节）
             let data_dir = app.path().app_data_dir().expect("获取数据目录失败");
@@ -27,6 +29,10 @@ pub fn run() {
             window_state.set_strip_center_ratio(window_ctl::load_strip_center_ratio(&database));
             let window_state = Arc::new(window_state);
             app.manage(database);
+
+            // 全局热键：先挂状态，再按 settings 恢复注册（缺省 Alt+T）
+            app.manage(hotkey::HotkeyState::default());
+            hotkey::init(app.handle());
 
             let main_window = app.get_webview_window("main").expect("未找到主窗口");
             window_ctl::initialize(&main_window, &window_state)
@@ -52,6 +58,7 @@ pub fn run() {
             commands::set_panel_animations,
             commands::get_setting,
             commands::set_setting,
+            hotkey::set_global_hotkey,
             window_ctl::expand_panel,
             window_ctl::collapse_panel,
             window_ctl::set_panel_editing,
