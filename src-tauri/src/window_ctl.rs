@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
     time::Duration,
@@ -46,10 +46,6 @@ pub struct WindowCtlState {
     desktop_pinned: AtomicBool,
     /// 重钉流程进行中标记：2 秒巡检与广播监听都会触发重钉，避免堆线程
     remount_active: AtomicBool,
-    /// 钉住时摘掉的窗口边框样式（GWL_STYLE 原值，0 = 未保存）
-    saved_window_style: AtomicIsize,
-    /// 钉住时摘掉的扩展样式（GWL_EXSTYLE 原值，0 = 未保存）
-    saved_window_exstyle: AtomicIsize,
 }
 
 impl Default for WindowCtlState {
@@ -64,8 +60,6 @@ impl Default for WindowCtlState {
             generation: AtomicU64::new(0),
             desktop_pinned: AtomicBool::new(false),
             remount_active: AtomicBool::new(false),
-            saved_window_style: AtomicIsize::new(0),
-            saved_window_exstyle: AtomicIsize::new(0),
         }
     }
 }
@@ -764,15 +758,11 @@ mod worker_w {
     }
 }
 
-/// 钉住时摘掉/恢复窗口的非客户区边框样式。挂进子窗口层级后系统不再
-/// 像顶层窗口那样隐藏边框，WS_CAPTION/WS_THICKFRAME/WS_EX_CLIENTEDGE
-/// 会画出一圈外框（用户反馈的「多了一层外框」），故摘除并在解钉时还原。
+/// 摘掉窗口的非客户区边框样式（WS_CAPTION/WS_THICKFRAME/WS_EX_CLIENTEDGE）。
+/// 必须先走 tao 自己的 set_decorations(false) 再物理摘除：直接改样式会被
+/// tao 的内部样式缓存在下一次状态刷新（如失焦）时写回，外框重现。
 #[cfg(windows)]
-fn set_frame_styles_visible(
-    hwnd: windows::Win32::Foundation::HWND,
-    state: &Arc<WindowCtlState>,
-    visible: bool,
-) -> Result<(), String> {
+fn strip_frame_styles(hwnd: windows::Win32::Foundation::HWND) -> Result<(), String> {
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE,
         SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_CAPTION,
@@ -783,34 +773,11 @@ fn set_frame_styles_visible(
     const FRAME_EXBITS: isize = WS_EX_CLIENTEDGE.0 as isize;
 
     unsafe {
-        if visible {
-            let saved_style = state.saved_window_style.swap(0, Ordering::AcqRel);
-            let saved_exstyle = state.saved_window_exstyle.swap(0, Ordering::AcqRel);
-            if saved_style != 0 {
-                SetWindowLongPtrW(hwnd, GWL_STYLE, saved_style);
-            }
-            if saved_exstyle != 0 {
-                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, saved_exstyle);
-            }
-            if saved_style != 0 || saved_exstyle != 0 {
-                SetWindowPos(
-                    hwnd,
-                    None,
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
-                )
-                .map_err(|error| error.to_string())?;
-            }
-            return Ok(());
-        }
-
         let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
         let exstyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        state.saved_window_style.store(style, Ordering::Release);
-        state.saved_window_exstyle.store(exstyle, Ordering::Release);
+        if style & FRAME_BITS == 0 && exstyle & FRAME_EXBITS == 0 {
+            return Ok(());
+        }
         SetWindowLongPtrW(hwnd, GWL_STYLE, style & !FRAME_BITS);
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, exstyle & !FRAME_EXBITS);
         SetWindowPos(
@@ -843,7 +810,12 @@ fn pin_to_desktop_layer(
         worker = worker_w::find_desktop_worker_w();
     }
     let worker = worker.ok_or_else(|| "未能定位桌面壁纸层（WorkerW），请稍后重试".to_string())?;
-    set_frame_styles_visible(hwnd, state, false)?;
+    // 让 tao 把「无边框」写进自己的样式缓存（否则失焦时缓存刷新会把
+    // 标题栏样式写回来，外框重现），随后物理摘除残留的边框位
+    window
+        .set_decorations(false)
+        .map_err(|error| error.to_string())?;
+    strip_frame_styles(hwnd)?;
     window
         .set_always_on_top(false)
         .map_err(|error| error.to_string())?;
@@ -869,7 +841,6 @@ fn apply_desktop_pin_impl(
             if result.is_err() {
                 state.desktop_pinned.store(false, Ordering::Release);
                 worker_w::unparent(hwnd);
-                let _ = set_frame_styles_visible(hwnd, state, true);
                 let _ = window.set_always_on_top(true);
             }
             result?;
@@ -877,7 +848,7 @@ fn apply_desktop_pin_impl(
             state.desktop_pinned.store(false, Ordering::Release);
             // 解挂回顶层并恢复置顶，即回到普通贴边模式
             worker_w::unparent(hwnd);
-            let _ = set_frame_styles_visible(hwnd, state, true);
+            let _ = window.set_decorations(false);
             window
                 .set_always_on_top(true)
                 .map_err(|error| error.to_string())?;
