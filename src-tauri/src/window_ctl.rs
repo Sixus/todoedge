@@ -44,6 +44,8 @@ pub struct WindowCtlState {
     generation: AtomicU64,
     /// 是否已钉到桌面（M3-5）：展开常驻壁纸层，收起/全屏逻辑全部让位
     desktop_pinned: AtomicBool,
+    /// 重钉流程进行中标记：2 秒巡检与广播监听都会触发重钉，避免堆线程
+    remount_active: AtomicBool,
 }
 
 impl Default for WindowCtlState {
@@ -57,6 +59,7 @@ impl Default for WindowCtlState {
             strip_center_ratio: AtomicU64::new(DEFAULT_STRIP_CENTER_RATIO.to_bits()),
             generation: AtomicU64::new(0),
             desktop_pinned: AtomicBool::new(false),
+            remount_active: AtomicBool::new(false),
         }
     }
 }
@@ -486,24 +489,21 @@ pub fn start_fullscreen_monitor(window: WebviewWindow, state: Arc<WindowCtlState
         loop {
             tokio::select! {
                 _ = fullscreen_check.tick() => {
-                    // 钉桌面模式（M3-5）：不做全屏隐藏/细条切换，但 Win+D 等
-                    // 「显示桌面」操作可能把顶层窗口最小化，检测到就恢复压底
+                    // 钉桌面模式（M3-5）：不做全屏隐藏/细条切换；改为轻量巡检——
+                    // 被 Win+D 波及或被 shell 孤儿化（桌面结构重建）就重新钉上
                     if state.is_desktop_pinned() {
                         let disturbed = window.is_minimized().unwrap_or(false)
                             || !window.is_visible().unwrap_or(true);
-                        if disturbed {
+                        #[cfg(windows)]
+                        let parent_ok = match window.hwnd() {
+                            Ok(hwnd) => worker_w::parent_is_desktop_layer(hwnd),
+                            Err(_) => true,
+                        };
+                        #[cfg(not(windows))]
+                        let parent_ok = true;
+                        if disturbed || !parent_ok {
                             #[cfg(windows)]
-                            {
-                                if let Ok(hwnd) = window.hwnd() {
-                                    use windows::Win32::UI::WindowsAndMessaging::{
-                                        ShowWindow, SW_SHOWNOACTIVATE,
-                                    };
-                                    unsafe {
-                                        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-                                    }
-                                    let _ = dock_window_above_wallpaper(hwnd);
-                                }
-                            }
+                            schedule_desktop_pin_remount(window.app_handle().clone());
                         }
                         continue;
                     }
@@ -535,62 +535,231 @@ pub fn start_fullscreen_monitor(window: WebviewWindow, state: Arc<WindowCtlState
 }
 
 // ---------------------------------------------------------------------------
-// 钉到桌面（M3-5，docs/01 第 3.1③ 节）：面板常驻桌面当便签用。
+// 钉到桌面（M3-5，docs/01 第 3.1③ 节）：Fences/Coodesker 式，面板常驻桌面。
 //
-// 实现说明：经典路线是 SetParent 挂进壁纸层 WorkerW（Progman → 0x052C →
-// EnumWindows 找 SHELLDLL_DefView 之后的 WorkerW）。实测本机（Win11 23H2）
-// 发送 0x052C 后 explorer 并不生成壁纸 WorkerW，而挂进 Progman 的窗口 DWM
-// 不渲染（SetWindowBand 需 shell 特权，普通进程改不了波段），遂放弃挂载。
-// 现行方案：保持顶层窗口，取消置顶并把 z 序压到最底（HWND_BOTTOM，仅高于
-// 壁纸层）——效果同样是常驻桌面、在一切应用窗口之下；面板自带
-// WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW，不抢焦点、不进 Alt+Tab；
-// Win+D 若把面板最小化，由全屏监视循环 2 秒内自动恢复（见下方守卫）。
+// 实现（Coodesker 同款）：发送 0x052C 让 shell「抬起桌面」——图标视图
+// SHELLDLL_DefView 挪进顶层 WorkerW1；把面板 SetParent 进 WorkerW1、
+// z 序压到图标列表之上。效果：壁纸可见、面板盖住自己矩形内的图标、
+// 一切应用窗口之下、Win+D 不消失、鼠标直达面板。
+//
+// 坑位记录（本机 Win11 23H2 云桌面实测）：
+// - 新版 shell 对 0x052C 经典参数 (0,0) 免疫，需 0xD 变体 (13,0)/(13,1)
+//   乃至重设一次壁纸才肯抬起，pin 流程自带触发与重试；
+// - 未抬起时图标宿主是 Progman 本体，挂进去的窗口 DWM 不渲染，不能用作
+//   挂点；壁纸层 WorkerW2 收不到鼠标点击（图标层不透传），也不采用。
+// - shell 重建桌面结构会把面板孤儿化回顶层：由监听线程
+//   （TaskbarCreated/WM_DISPLAYCHANGE）与 2 秒巡检重钉。
 // ---------------------------------------------------------------------------
 
-/// 把窗口放到「壁纸之上、一切应用窗口之下」的位置（钉桌面态的常规位置）。
-/// SetWindowPos 的 insert-after 语义只能把窗口往下插，无法直接"插到 Progman
-/// 之上"，所以用两步：先把自己压到最底，再把 Progman 压到最底（壁纸垫底），
-/// 我们就自然紧贴在壁纸之上、其余一切窗口之下。
+/// WorkerW 壁纸层挂载的 Win32 细节，全部收在本模块（AGENTS.md 平台纪律）。
 #[cfg(windows)]
-fn dock_window_above_wallpaper(hwnd: windows::Win32::Foundation::HWND) -> Result<(), String> {
-    use windows::Win32::Foundation::{HWND, LPARAM};
+mod worker_w {
+    use windows::core::{w, BOOL, PCWSTR};
+    use windows::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetClassNameW, SetWindowPos, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-        HWND_BOTTOM,
+        EnumChildWindows, EnumWindows, GA_PARENT, GetAncestor, GetClassNameW, GetSystemMetrics,
+        GetWindowRect, IsWindowVisible, SendMessageTimeoutW, SetParent, SetWindowPos, ShowWindow,
+        SMTO_ABORTIFHUNG, SPI_GETDESKWALLPAPER, SPI_SETDESKWALLPAPER, SWP_NOACTIVATE, SWP_NOMOVE,
+        SWP_NOSIZE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, HWND_TOP, SM_CXSCREEN,
+        SM_CYSCREEN, SPIF_SENDCHANGE, SPIF_UPDATEINIFILE, SystemParametersInfoW,
     };
 
-    unsafe extern "system" fn progman_callback(target: HWND, lparam: LPARAM) -> windows::core::BOOL {
-        let search = &mut *(lparam.0 as *mut Option<HWND>);
+    fn class_name_is(target: HWND, expected: PCWSTR) -> bool {
         let mut buffer = [0u16; 64];
         let len = unsafe { GetClassNameW(target, &mut buffer) };
-        if len > 0 && String::from_utf16_lossy(&buffer[..len as usize]) == "Progman" {
-            *search = Some(target);
-            return windows::core::BOOL(0);
+        if len <= 0 {
+            return false;
         }
-        windows::core::BOOL(1)
+        let expected = unsafe { expected.to_string() }.unwrap_or_default();
+        String::from_utf16_lossy(&buffer[..len as usize]) == expected
     }
 
-    let mut progman: Option<HWND> = None;
-    unsafe {
-        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
-        // 1. 自己先到底（此时位于壁纸之下）
-        SetWindowPos(hwnd, Some(HWND_BOTTOM), 0, 0, 0, 0, flags)
-            .map_err(|error| error.to_string())?;
-        // 2. 找到 Progman 并把它压到更底，壁纸垫底、我们的面板贴壁纸
-        let _ = EnumWindows(
-            Some(progman_callback),
-            LPARAM(&mut progman as *mut Option<HWND> as isize),
-        );
-        if let Some(progman) = progman {
-            SetWindowPos(progman, Some(HWND_BOTTOM), 0, 0, 0, 0, flags)
-                .map_err(|error| error.to_string())?;
+    struct DefViewSearch {
+        found: bool,
+    }
+
+    unsafe extern "system" fn defview_callback(child: HWND, lparam: LPARAM) -> BOOL {
+        let state = &mut *(lparam.0 as *mut DefViewSearch);
+        if class_name_is(child, w!("SHELLDLL_DefView")) {
+            state.found = true;
+            return BOOL(0);
+        }
+        BOOL(1)
+    }
+
+    /// 该顶层窗口是否托管桌面图标视图 SHELLDLL_DefView（图标层宿主）
+    fn hosts_desktop_icons(hwnd: HWND) -> bool {
+        let mut search = DefViewSearch { found: false };
+        unsafe {
+            let _ = EnumChildWindows(
+                Some(hwnd),
+                Some(defview_callback),
+                LPARAM(&mut search as *mut DefViewSearch as isize),
+            );
+        }
+        search.found
+    }
+
+    /// 壁纸层 WorkerW 判据：可见 + 覆盖主屏大部分区域。
+    /// 桌面上还漂浮着大量 shell/应用自带的不可见小 WorkerW，纯类名会误匹配。
+    fn looks_like_wallpaper_layer(hwnd: HWND) -> bool {
+        unsafe {
+            if !IsWindowVisible(hwnd).as_bool() {
+                return false;
+            }
+            let mut rect = RECT::default();
+            if GetWindowRect(hwnd, &mut rect).is_err() {
+                return false;
+            }
+            let (screen_w, screen_h) = (
+                GetSystemMetrics(SM_CXSCREEN) as i64,
+                GetSystemMetrics(SM_CYSCREEN) as i64,
+            );
+            let (width, height) =
+                ((rect.right - rect.left) as i64, (rect.bottom - rect.top) as i64);
+            width * 7 >= screen_w * 5 && height * 7 >= screen_h * 5
         }
     }
-    Ok(())
+
+    fn find_progman() -> Option<HWND> {
+        // FindWindow("Progman") 在部分环境（云桌面等）不可靠，统一走枚举
+        unsafe extern "system" fn progman_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+            let search = &mut *(lparam.0 as *mut Option<HWND>);
+            let mut buffer = [0u16; 64];
+            let len = unsafe { GetClassNameW(hwnd, &mut buffer) };
+            if len > 0 && String::from_utf16_lossy(&buffer[..len as usize]) == "Progman" {
+                *search = Some(hwnd);
+                return BOOL(0);
+            }
+            BOOL(1)
+        }
+        let mut progman: Option<HWND> = None;
+        unsafe {
+            let _ = EnumWindows(
+                Some(progman_callback),
+                LPARAM(&mut progman as *mut Option<HWND> as isize),
+            );
+        }
+        progman
+    }
+
+    /// 定位挂载点（Coodesker 式）：图标宿主 WorkerW1——承载
+    /// SHELLDLL_DefView 的顶层 WorkerW。面板挂其内、图标列表之上：
+    /// 渲染、真实鼠标点击、Win+D 免疫三者实测均成立。
+    /// 实测备注：壁纸层 WorkerW2 在本机收不到鼠标点击（图标层不透传），
+    /// 而未抬起的 Progman 槽位不渲染，故只认 WorkerW1。
+    pub fn find_desktop_worker_w() -> Option<HWND> {
+        locate()
+    }
+
+    fn locate() -> Option<HWND> {
+        let mut host: Option<HWND> = None;
+        unsafe extern "system" fn callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+            let target = &mut *(lparam.0 as *mut Option<HWND>);
+            if target.is_some() {
+                return BOOL(1);
+            }
+            if class_name_is(hwnd, w!("WorkerW"))
+                && hosts_desktop_icons(hwnd)
+                && looks_like_wallpaper_layer(hwnd)
+            {
+                *target = Some(hwnd);
+                return BOOL(0);
+            }
+            BOOL(1)
+        }
+        unsafe {
+            let _ = EnumWindows(
+                Some(callback),
+                LPARAM(&mut host as *mut Option<HWND> as isize),
+            );
+        }
+        host
+    }
+
+    /// 触发 shell 抬起桌面：0x052C 经典参数与 0xD 变体都发一遍，再重设一次
+    /// 当前壁纸强制重建壁纸层（新版 shell 对经典 (0,0) 参数免疫，实测本机
+    /// 靠这一套才能把桌面「抬起」成 WorkerW 结构）。
+    pub fn nudge_shell_to_raise_desktop() {
+        let progman = find_progman();
+        let messages = [(13usize, 0isize), (13, 1), (0, 0)];
+        unsafe {
+            if let Some(progman) = progman {
+                for (wparam, lparam) in messages {
+                    let _ = SendMessageTimeoutW(
+                        progman,
+                        0x052C,
+                        WPARAM(wparam),
+                        LPARAM(lparam),
+                        SMTO_ABORTIFHUNG,
+                        200,
+                        None,
+                    );
+                }
+            }
+        }
+        let mut wallpaper = [0u16; 260];
+        let ok = unsafe {
+            SystemParametersInfoW(
+                SPI_GETDESKWALLPAPER,
+                wallpaper.len() as u32,
+                Some(wallpaper.as_mut_ptr().cast()),
+                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+            )
+        }
+        .is_ok();
+        if ok {
+            unsafe {
+                let _ = SystemParametersInfoW(
+                    SPI_SETDESKWALLPAPER,
+                    0,
+                    Some(wallpaper.as_ptr().cast_mut().cast()),
+                    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(
+                        SPIF_UPDATEINIFILE.0 | SPIF_SENDCHANGE.0,
+                    ),
+                );
+            }
+        }
+    }
+
+    /// 挂入图标宿主并压到该层最上（图标列表之上、壁纸之上）。
+    pub fn parent_to_worker(child: HWND, worker: HWND) -> std::result::Result<(), String> {
+        unsafe {
+            SetParent(child, Some(worker)).map_err(|error| error.to_string())?;
+            // 确认父子关系真的成立。注意必须用 GetAncestor(GA_PARENT)：
+            // 本窗口是 WS_POPUP，GetParent 对它返回的是所有者（NULL）而非父窗口
+            if GetAncestor(child, GA_PARENT) != worker {
+                return Err("SetParent 后未检测到父子关系，父窗口可能已被销毁".to_string());
+            }
+            SetWindowPos(child, Some(HWND_TOP), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+                .map_err(|error| error.to_string())?;
+            let _ = ShowWindow(child, SW_SHOWNOACTIVATE);
+        }
+        Ok(())
+    }
+
+    /// 解挂回顶层窗口（本就顶层时报错忽略）。
+    pub fn unparent(child: HWND) {
+        unsafe {
+            let _ = SetParent(child, None);
+        }
+    }
+
+    /// 钉住态校验：父窗口仍是可见的全屏 WorkerW（壁纸层或图标层宿主）。
+    /// shell 重建桌面结构会把挂进去的窗口孤儿化回顶层，靠它发现并重钉。
+    pub fn parent_is_desktop_layer(child: HWND) -> bool {
+        unsafe {
+            let parent = GetAncestor(child, GA_PARENT);
+            if parent == HWND::default() || parent == child {
+                return false;
+            }
+            class_name_is(parent, w!("WorkerW")) && looks_like_wallpaper_layer(parent)
+        }
+    }
 }
 
-/// 钉桌面的落位序列：进展开态 → 取消置顶 → z 序压底。任一步失败即返回 Err
-/// （调用方负责回滚 desktop_pinned 标记）。
+/// 钉桌面的落位序列：进展开态（顶层语义下落位）→ 定位/触发壁纸层 →
+/// 取消置顶 → SetParent 挂入。任一步失败即返回 Err（调用方负责回滚标记）。
 #[cfg(windows)]
 fn pin_to_desktop_layer(
     window: &WebviewWindow,
@@ -598,10 +767,18 @@ fn pin_to_desktop_layer(
     hwnd: windows::Win32::Foundation::HWND,
 ) -> Result<(), String> {
     set_mode(window, state, WindowMode::Expanded, true, false).map(|_| ())?;
+    let mut worker = worker_w::find_desktop_worker_w();
+    if worker.is_none() {
+        // 新版 shell 对 0x052C 经典参数免疫，主动触发一轮「抬起桌面」再找
+        worker_w::nudge_shell_to_raise_desktop();
+        std::thread::sleep(Duration::from_millis(600));
+        worker = worker_w::find_desktop_worker_w();
+    }
+    let worker = worker.ok_or_else(|| "未能定位桌面壁纸层（WorkerW），请稍后重试".to_string())?;
     window
         .set_always_on_top(false)
         .map_err(|error| error.to_string())?;
-    dock_window_above_wallpaper(hwnd)
+    worker_w::parent_to_worker(hwnd, worker)
 }
 
 /// 钉/解钉的实际窗口手术，必须在主线程（窗口属主线程序）调用。
@@ -622,12 +799,14 @@ fn apply_desktop_pin_impl(
             let result = pin_to_desktop_layer(window, state, hwnd);
             if result.is_err() {
                 state.desktop_pinned.store(false, Ordering::Release);
+                worker_w::unparent(hwnd);
                 let _ = window.set_always_on_top(true);
             }
             result?;
         } else {
             state.desktop_pinned.store(false, Ordering::Release);
-            // 恢复置顶即回到普通贴边模式（tao 会把窗口放回正常 z 序）
+            // 解挂回顶层并恢复置顶，即回到普通贴边模式
+            worker_w::unparent(hwnd);
             window
                 .set_always_on_top(true)
                 .map_err(|error| error.to_string())?;
@@ -641,6 +820,7 @@ fn apply_desktop_pin_impl(
         Ok(())
     }
 }
+
 
 /// 在主线程跑一个返回 Result 的闭包并拿回结果。仅供异步线程调用
 /// （主线程自己调会死锁等通道，见 set_desktop_pin 注释）。
@@ -720,15 +900,28 @@ fn remount_desktop_pin_on_main(app: &AppHandle) -> bool {
 }
 
 /// 重钉重试：系统广播到达时 shell 可能尚未就绪，最多重试 10 秒。
+/// 巡检循环与广播监听都会调这里，用 remount_active 防止堆线程。
 #[cfg(windows)]
 fn schedule_desktop_pin_remount(app: AppHandle) {
+    let state = match app.try_state::<Arc<WindowCtlState>>() {
+        Some(state) => state.inner().clone(),
+        None => return,
+    };
+    if state
+        .remount_active
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return;
+    }
     std::thread::spawn(move || {
         for _ in 0..20 {
             if remount_desktop_pin_on_main(&app) {
-                return;
+                break;
             }
             std::thread::sleep(Duration::from_millis(500));
         }
+        state.remount_active.store(false, Ordering::Release);
     });
 }
 
