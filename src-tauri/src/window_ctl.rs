@@ -46,6 +46,8 @@ pub struct WindowCtlState {
     desktop_pinned: AtomicBool,
     /// 重钉流程进行中标记：2 秒巡检与广播监听都会触发重钉，避免堆线程
     remount_active: AtomicBool,
+    /// 应用退出中标记：退出时窗口销毁属正常流程，不能触发重建
+    exiting: AtomicBool,
 }
 
 impl Default for WindowCtlState {
@@ -60,6 +62,7 @@ impl Default for WindowCtlState {
             generation: AtomicU64::new(0),
             desktop_pinned: AtomicBool::new(false),
             remount_active: AtomicBool::new(false),
+            exiting: AtomicBool::new(false),
         }
     }
 }
@@ -93,6 +96,15 @@ impl WindowCtlState {
     pub fn set_strip_center_ratio(&self, ratio: f64) {
         self.strip_center_ratio
             .store(ratio.to_bits(), Ordering::Release);
+    }
+
+    /// 标记应用退出中：退出阶段窗口销毁是正常流程，不能触发重建
+    pub fn mark_exiting(&self) {
+        self.exiting.store(true, Ordering::Release);
+    }
+
+    pub fn is_exiting(&self) -> bool {
+        self.exiting.load(Ordering::Acquire)
     }
 }
 
@@ -481,29 +493,55 @@ fn pointer_is_outside_window(_: &WebviewWindow) -> Result<bool, String> {
     Ok(false)
 }
 
-pub fn start_fullscreen_monitor(window: WebviewWindow, state: Arc<WindowCtlState>) {
+pub fn start_fullscreen_monitor(app: AppHandle, state: Arc<WindowCtlState>) {
     tauri::async_runtime::spawn(async move {
         let mut fullscreen_check = tokio::time::interval(Duration::from_secs(2));
         let mut pointer_check = tokio::time::interval(Duration::from_millis(50));
 
         loop {
+            // 主窗口可能被 shell 销毁后由销毁事件重建，每轮取最新窗口
+            let window = match app.get_webview_window("main") {
+                Some(window) => window,
+                None => {
+                    // 窗口暂缺（销毁到重建之间）：等下一轮
+                    fullscreen_check.tick().await;
+                    continue;
+                }
+            };
             tokio::select! {
                 _ = fullscreen_check.tick() => {
                     // 钉桌面模式（M3-5）：不做全屏隐藏/细条切换；改为轻量巡检——
                     // 被 Win+D 波及或被 shell 孤儿化（桌面结构重建）就重新钉上
                     if state.is_desktop_pinned() {
-                        let disturbed = window.is_minimized().unwrap_or(false)
-                            || !window.is_visible().unwrap_or(true);
+                        let disturbed = window.is_minimized().unwrap_or(true)
+                            || !window.is_visible().unwrap_or(false);
                         #[cfg(windows)]
                         let parent_ok = match window.hwnd() {
                             Ok(hwnd) => worker_w::parent_is_desktop_layer(hwnd),
-                            Err(_) => true,
+                            Err(_) => false,
                         };
                         #[cfg(not(windows))]
                         let parent_ok = true;
-                        if disturbed || !parent_ok {
+                        // 分辨率变化后几何会漂移：与期望展开几何偏差超 1 逻辑像素就重钉
+                        let geometry_ok = (|| {
+                            let monitor = window.primary_monitor().ok()??;
+                            let target = geometry_for(
+                                monitor,
+                                WindowMode::Expanded,
+                                state.strip_center_ratio(),
+                            );
+                            let current = current_geometry(&window)?;
+                            Some(
+                                (current.size.width - target.size.width).abs() < 1.0
+                                    && (current.size.height - target.size.height).abs() < 1.0
+                                    && (current.position.x - target.position.x).abs() < 1.0
+                                    && (current.position.y - target.position.y).abs() < 1.0,
+                            )
+                        })()
+                        .unwrap_or(true);
+                        if disturbed || !parent_ok || !geometry_ok {
                             #[cfg(windows)]
-                            schedule_desktop_pin_remount(window.app_handle().clone());
+                            schedule_desktop_pin_remount(app.clone());
                         }
                         continue;
                     }
@@ -800,8 +838,10 @@ fn pin_to_desktop_layer(
     state: &Arc<WindowCtlState>,
     hwnd: windows::Win32::Foundation::HWND,
 ) -> Result<(), String> {
+    eprintln!("[pin] flow start");
     set_mode(window, state, WindowMode::Expanded, true, false).map(|_| ())?;
     let mut worker = worker_w::find_desktop_worker_w();
+    eprintln!("[pin] worker found: {}", worker.is_some());
     if worker.is_none() {
         // 新版 shell 对 0x052C 经典参数免疫，主动触发一轮「抬起桌面」再找
         worker_w::nudge_shell_to_raise_desktop();
@@ -816,7 +856,29 @@ fn pin_to_desktop_layer(
     // 缓存重写窗口样式（把标题栏位带回来），先摘会被覆盖、失焦后外框重现；
     // 摘除后直到 SetParent 之间不再有任何样式写入，即可稳定保持无边框
     strip_frame_styles(hwnd)?;
-    worker_w::parent_to_worker(hwnd, worker)
+    eprintln!("[pin] stripped, parenting now");
+    let r = worker_w::parent_to_worker(hwnd, worker);
+    eprintln!("[pin] parent result: {:?}", r.as_ref().map(|_| ()));
+    // 事后延迟校验：3 秒后窗口是否仍存在、父窗口是谁（抓 shell 事后拆结构）
+    {
+        let hwnd_raw = hwnd.0 as usize;
+        std::thread::spawn(move || {
+            for delay_ms in [1000u64, 3000, 8000] {
+                std::thread::sleep(Duration::from_millis(delay_ms));
+                unsafe {
+                    use windows::Win32::Foundation::HWND;
+                    use windows::Win32::UI::WindowsAndMessaging::{
+                        GetAncestor, GA_PARENT, IsWindow,
+                    };
+                    let hwnd = HWND(hwnd_raw as *mut _);
+                    let alive = IsWindow(Some(hwnd)).as_bool();
+                    let parent = GetAncestor(hwnd, GA_PARENT);
+                    eprintln!("[pin] +{delay_ms}ms IsWindow={alive} parent={parent:?}");
+                }
+            }
+        });
+    }
+    r
 }
 
 /// 钉/解钉的实际窗口手术，必须在主线程（窗口属主线程序）调用。
@@ -860,6 +922,59 @@ fn apply_desktop_pin_impl(
     }
 }
 
+
+/// 主窗口被外部销毁（shell 重建桌面结构会连带销毁挂进去的窗口）后的恢复：
+/// 重建主窗口；若处于钉住态则重新挂入桌面层。未钉住时的销毁属于正常退出流程。
+pub fn handle_main_window_destroyed(app: &AppHandle) {
+    let app = app.clone();
+    let state = match app.try_state::<Arc<WindowCtlState>>() {
+        Some(state) => state.inner().clone(),
+        None => return,
+    };
+    if state.is_exiting() || !state.is_desktop_pinned() {
+        return;
+    }
+    eprintln!("[recover] 主窗口被销毁且处于钉住态，重建窗口并重钉");
+    std::thread::spawn(move || {
+        // 等销毁过程完全结束，避免与新窗口创建竞态
+        std::thread::sleep(Duration::from_millis(300));
+        let app_for_job = app.clone();
+        let state_for_job = state.clone();
+        let result = run_on_main_thread_with(&app, move || {
+            recreate_main_window(&app_for_job, &state_for_job)
+        });
+        if let Err(error) = result {
+            eprintln!("[recover] 主窗口重建失败：{error}");
+        }
+    });
+}
+
+/// 重建主窗口（配置对齐 tauri.conf）并按当前状态落位；钉住态下重新挂入桌面层。
+fn recreate_main_window(app: &AppHandle, state: &Arc<WindowCtlState>) -> Result<(), String> {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+        .title("TodoEdge")
+        .decorations(false)
+        .shadow(false)
+        .resizable(false)
+        .skip_taskbar(true)
+        .transparent(true)
+        .inner_size(6.0, 432.0)
+        .build()
+        .map_err(|error| error.to_string())?;
+    configure_native_window(&window)?;
+    window
+        .set_always_on_top(true)
+        .map_err(|error| error.to_string())?;
+    set_mode(&window, state, WindowMode::Collapsed, false, false)?;
+    show_without_activation(&window)?;
+    if state.is_desktop_pinned() {
+        let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+        pin_to_desktop_layer(&window, state, hwnd)?;
+    }
+    Ok(())
+}
 
 /// 在主线程跑一个返回 Result 的闭包并拿回结果。仅供异步线程调用
 /// （主线程自己调会死锁等通道，见 set_desktop_pin 注释）。

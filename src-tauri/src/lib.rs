@@ -37,7 +37,14 @@ pub fn run() {
             let main_window = app.get_webview_window("main").expect("未找到主窗口");
             window_ctl::initialize(&main_window, &window_state)
                 .unwrap_or_else(|e| panic!("窗口初始化失败：{e}"));
-            window_ctl::start_fullscreen_monitor(main_window.clone(), window_state.clone());
+            // 销毁事件监听必须先于恢复钉住注册：启动恢复期间的销毁也要能接到
+            let app_for_destroy = app.handle().clone();
+            main_window.on_window_event(move |event| {
+                if let tauri::WindowEvent::Destroyed = event {
+                    window_ctl::handle_main_window_destroyed(&app_for_destroy);
+                }
+            });
+            window_ctl::start_fullscreen_monitor(app.handle().clone(), window_state.clone());
             // 钉到桌面（M3-5）：上次会话 pin 过则自动恢复钉住；explorer 重启/分辨率
             // 变化后的重钉由监听线程兜底
             window_ctl::restore_desktop_pin(
@@ -76,6 +83,16 @@ pub fn run() {
             window_ctl::set_desktop_pin,
             window_ctl::current_window_mode,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app_handle: &tauri::AppHandle, event| {
+            // 退出阶段窗口销毁是正常流程，标记退出避免触发主窗口重建
+            if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
+                if let Some(state) = app_handle
+                    .try_state::<std::sync::Arc<window_ctl::WindowCtlState>>()
+                {
+                    state.inner().mark_exiting();
+                }
+            }
+        });
 }
