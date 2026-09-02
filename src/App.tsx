@@ -46,10 +46,14 @@ function App() {
       .getSetting(ANIMATIONS_SETTING_KEY)
       .then((value) => api.setPanelAnimations(value !== "0"))
       .catch(() => undefined);
-    // 图钉固定：跨重启记住
+    // 图钉固定：跨重启记住，并同步给 Rust 侧（编辑态点外部兜底收起要看这个开关）
     void api
       .getSetting(PINNED_SETTING_KEY)
-      .then((value) => setPinned(value === "1"))
+      .then((value) => {
+        const restored = value === "1";
+        setPinned(restored);
+        void api.setPanelPinned(restored).catch(() => undefined);
+      })
       .catch(() => undefined);
     // 深浅模式：auto 跟随系统 / 手动浅深，启动恢复（lib/theme.ts 内部已监听系统变化）
     void api
@@ -62,6 +66,7 @@ function App() {
     setPinned((prev) => {
       const next = !prev;
       void api.setSetting(PINNED_SETTING_KEY, next ? "1" : "0").catch(() => undefined);
+      void api.setPanelPinned(next).catch(() => undefined);
       return next;
     });
   }, []);

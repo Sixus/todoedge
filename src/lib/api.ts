@@ -31,6 +31,8 @@ export const api = {
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
   setSetting: (key: string, value: string) =>
     invoke<void>("set_setting", { key, value }),
+  /** 完全退出程序（设置页底部按钮）：结束整个应用 */
+  exitApp: () => invoke<void>("exit_app"),
   autostartStatus: () => invoke<boolean>("autostart_status"),
   setAutostart: (enabled: boolean) => invoke<void>("set_autostart", { enabled }),
   setPanelAnimations: (enabled: boolean) =>
@@ -39,6 +41,9 @@ export const api = {
   collapsePanel: () => invoke<WindowMode>("collapse_panel"),
   setPanelEditing: (editing: boolean) =>
     invoke<void>("set_panel_editing", { editing }),
+  /** 图钉固定同步给 Rust：固定时「编辑态点外部」兜底收起一并失效 */
+  setPanelPinned: (pinned: boolean) =>
+    invoke<void>("set_panel_pinned", { pinned }),
   /** 拖动细条：把指针位移增量（逻辑像素）交给 Rust 移动窗口 y（x 恒贴右缘），不落库 */
   moveStripWindow: (deltaY: number) =>
     invoke<void>("move_strip_window", { deltaY }),

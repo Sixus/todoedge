@@ -220,6 +220,12 @@ pub fn set_setting(db: State<Db>, key: String, value: String) -> Result<(), Stri
     db::setting_set(&conn, &key, &value)
 }
 
+/// 完全退出程序（设置页底部按钮）：结束事件循环，细条与面板一并消失。
+#[tauri::command]
+pub fn exit_app(app: AppHandle) {
+    app.exit(0);
+}
+
 #[cfg(test)]
 mod tests {
     use super::remind_at_is_past;

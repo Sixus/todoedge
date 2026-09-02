@@ -33,6 +33,8 @@ pub struct WindowCtlState {
     mode: Mutex<WindowMode>,
     is_fullscreen: AtomicBool,
     is_editing: AtomicBool,
+    /// 图钉固定（M2 反馈）：固定时「编辑态点外部」兜底收起一并失效（全屏强制收回除外）
+    pinned: AtomicBool,
     left_button_down: AtomicBool,
     /// 滑出/缩进动画开关（settings 表持久化，前端启动时同步进来）
     pub animations_enabled: AtomicBool,
@@ -48,6 +50,7 @@ impl Default for WindowCtlState {
             mode: Mutex::new(WindowMode::Collapsed),
             is_fullscreen: AtomicBool::new(false),
             is_editing: AtomicBool::new(false),
+            pinned: AtomicBool::new(false),
             left_button_down: AtomicBool::new(false),
             animations_enabled: AtomicBool::new(true),
             strip_center_ratio: AtomicU64::new(DEFAULT_STRIP_CENTER_RATIO.to_bits()),
@@ -315,6 +318,12 @@ pub fn set_panel_editing(editing: bool, state: State<'_, Arc<WindowCtlState>>) {
     }
 }
 
+/// 图钉开关变化时由前端同步过来：轮询兜底收起据此放行或拦截
+#[tauri::command]
+pub fn set_panel_pinned(pinned: bool, state: State<'_, Arc<WindowCtlState>>) {
+    state.pinned.store(pinned, Ordering::Release);
+}
+
 /// 拖动细条（M3-4）：前端把指针位移增量（逻辑像素）发过来，换算成比例更新
 /// 状态并立即贴新 y（x 恒贴右缘，不做动画保证跟手）。不落库——拖动结束由
 /// persist_strip_position 统一写 settings，避免每帧写数据库。
@@ -467,7 +476,9 @@ pub fn start_fullscreen_monitor(window: WebviewWindow, state: Arc<WindowCtlState
                         let _ = set_mode(&window, &state, WindowMode::Collapsed, true);
                     }
                 }
-                _ = pointer_check.tick(), if state.is_editing.load(Ordering::Acquire) => {
+                // 编辑态点外部收起的兜底：图钉固定时不轮询，固定语义优先
+                _ = pointer_check.tick(), if state.is_editing.load(Ordering::Acquire)
+                    && !state.pinned.load(Ordering::Acquire) => {
                     match pointer_is_outside_window(&window) {
                         Ok(true) => {
                             if !state.left_button_down.swap(true, Ordering::AcqRel) {

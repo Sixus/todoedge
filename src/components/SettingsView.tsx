@@ -332,6 +332,18 @@ export function SettingsView({ onClose }: SettingsViewProps) {
       {error ? (
         <p className="px-2.5 pt-1 text-[12px] text-[color:var(--danger)]">{error}</p>
       ) : null}
+
+      {/* 完全退出：结束整个应用进程，细条与面板一并消失 */}
+      <button
+        aria-label="完全退出程序"
+        className="settings-exit"
+        onClick={() => void api.exitApp().catch((cause) => setError(errorMessage(cause)))}
+        title="退出 TodoEdge"
+        type="button"
+      >
+        完全退出
+      </button>
+      <p className="settings-version">V 1.0</p>
     </div>
   );
 }

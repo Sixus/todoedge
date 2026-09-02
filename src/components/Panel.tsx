@@ -49,14 +49,18 @@ export function Panel({
   const panelRef = useRef<HTMLElement>(null);
   const collapseTimer = useRef<number | null>(null);
   const isEditingRef = useRef(false);
+  // 图钉最新值镜像：requestCollapse 会被首挂载的事件监听器/定时器闭包调用，
+  // 直接读 props 会拿到过期值（首帧 pinned=false），固定后仍会收起
+  const pinnedRef = useRef(pinned);
   const [isEditing, setIsEditing] = useState(false);
   // 设置视图：覆盖在面板内容上（M2-4 反馈后从独立小窗改为面板内嵌）
   const [showSettings, setShowSettings] = useState(false);
   // 周报视图：点底栏「已完成」覆盖面板（M3-1）
   const [showReport, setShowReport] = useState(false);
 
-  // 图钉激活时清掉已排队的自动收起
+  // 图钉激活时清掉已排队的自动收起，并同步镜像供各事件闭包读取
   useEffect(() => {
+    pinnedRef.current = pinned;
     if (pinned) {
       clearCollapseTimer();
     }
@@ -96,8 +100,8 @@ export function Panel({
   }
 
   function requestCollapse() {
-    // 图钉固定：移出/点外部/Esc/失焦等自动收起全部失效
-    if (pinned) {
+    // 图钉固定：移出/点外部/Esc/失焦等自动收起全部失效（读 ref 保证非过期值）
+    if (pinnedRef.current) {
       return;
     }
     clearCollapseTimer();
