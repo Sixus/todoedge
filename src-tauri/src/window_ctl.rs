@@ -840,10 +840,8 @@ fn pin_to_desktop_layer(
     state: &Arc<WindowCtlState>,
     hwnd: windows::Win32::Foundation::HWND,
 ) -> Result<(), String> {
-    eprintln!("[pin] flow start");
     set_mode(window, state, WindowMode::Expanded, true, false).map(|_| ())?;
     let mut worker = worker_w::find_desktop_worker_w();
-    eprintln!("[pin] worker found: {}", worker.is_some());
     if worker.is_none() {
         // 新版 shell 对 0x052C 经典参数免疫，主动触发一轮「抬起桌面」再找
         worker_w::nudge_shell_to_raise_desktop();
@@ -860,29 +858,7 @@ fn pin_to_desktop_layer(
     // 缓存重写窗口样式（把标题栏位带回来），先摘会被覆盖、失焦后外框重现；
     // 摘除后直到 SetParent 之间不再有任何样式写入，即可稳定保持无边框
     strip_frame_styles(hwnd)?;
-    eprintln!("[pin] stripped, parenting now");
-    let r = worker_w::parent_to_worker(hwnd, worker);
-    eprintln!("[pin] parent result: {:?}", r.as_ref().map(|_| ()));
-    // 事后延迟校验：3 秒后窗口是否仍存在、父窗口是谁（抓 shell 事后拆结构）
-    {
-        let hwnd_raw = hwnd.0 as usize;
-        std::thread::spawn(move || {
-            for delay_ms in [1000u64, 3000, 8000] {
-                std::thread::sleep(Duration::from_millis(delay_ms));
-                unsafe {
-                    use windows::Win32::Foundation::HWND;
-                    use windows::Win32::UI::WindowsAndMessaging::{
-                        GetAncestor, GA_PARENT, IsWindow,
-                    };
-                    let hwnd = HWND(hwnd_raw as *mut _);
-                    let alive = IsWindow(Some(hwnd)).as_bool();
-                    let parent = GetAncestor(hwnd, GA_PARENT);
-                    eprintln!("[pin] +{delay_ms}ms IsWindow={alive} parent={parent:?}");
-                }
-            }
-        });
-    }
-    r
+    worker_w::parent_to_worker(hwnd, worker)
 }
 
 /// 钉住态框架抑制（M3-5）：子类化主窗口，钉住时拦截非客户区消息——
