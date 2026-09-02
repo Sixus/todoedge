@@ -37,6 +37,10 @@ pub fn run() {
             let main_window = app.get_webview_window("main").expect("未找到主窗口");
             window_ctl::initialize(&main_window, &window_state)
                 .unwrap_or_else(|e| panic!("窗口初始化失败：{e}"));
+            // 钉住态框架抑制（M3-5）：失焦等事件触发 tao 样式缓存刷新写回标题栏
+            // 样式位时，靠消息拦截保证外框画不出来
+            window_ctl::install_frame_suppression(&main_window, &window_state)
+                .unwrap_or_else(|e| eprintln!("框架抑制安装失败：{e}"));
             // 销毁事件监听必须先于恢复钉住注册：启动恢复期间的销毁也要能接到
             let app_for_destroy = app.handle().clone();
             main_window.on_window_event(move |event| {

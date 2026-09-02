@@ -798,6 +798,8 @@ mod worker_w {
 
 /// 摘掉窗口的非客户区边框样式（WS_CAPTION/WS_THICKFRAME/WS_EX_CLIENTEDGE）。
 /// 调用时机有讲究：必须在 set_always_on_top 之后、SetParent 之前（见调用处）。
+/// 兜底由 install_frame_suppression 的消息拦截承担（tao 样式缓存刷新会写回
+/// 标题栏位，但拦截后非客户区不存在，写了也画不出来）。
 #[cfg(windows)]
 fn strip_frame_styles(hwnd: windows::Win32::Foundation::HWND) -> Result<(), String> {
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -852,6 +854,8 @@ fn pin_to_desktop_layer(
     window
         .set_always_on_top(false)
         .map_err(|error| error.to_string())?;
+    // 消息拦截对「新窗口」也要装（销毁重建后是新句柄）；同 ID 重复安装为替换
+    install_frame_suppression(window, state)?;
     // 摘边框必须放在 set_always_on_top 之后：tao 的 always_on_top 会按内部
     // 缓存重写窗口样式（把标题栏位带回来），先摘会被覆盖、失焦后外框重现；
     // 摘除后直到 SetParent 之间不再有任何样式写入，即可稳定保持无边框
@@ -879,6 +883,75 @@ fn pin_to_desktop_layer(
         });
     }
     r
+}
+
+/// 钉住态框架抑制（M3-5）：子类化主窗口，钉住时拦截非客户区消息——
+/// WM_NCCALCSIZE（客户区=整窗）、WM_NCPAINT（不画框）、WM_NCACTIVATE（不因
+/// 激活变化重画框）。tao 的样式缓存刷新会把标题栏样式位写回（失焦等事件
+/// 触发），但只要非客户区不存在，样式位怎么变都画不出外框。
+#[cfg(windows)]
+const FRAME_SUPPRESSION_ID: usize = 0x5444_4547; // "TDEG"
+
+#[cfg(windows)]
+pub fn install_frame_suppression(
+    window: &WebviewWindow,
+    state: &Arc<WindowCtlState>,
+) -> Result<(), String> {
+    use windows::Win32::UI::Shell::SetWindowSubclass;
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    // dwRefData 存 desktop_pinned 标志的地址（state 由 app 托管，进程级存活）
+    let pinned_flag_ptr =
+        &state.desktop_pinned as *const std::sync::atomic::AtomicBool as usize;
+    let installed = unsafe {
+        SetWindowSubclass(
+            hwnd,
+            Some(frame_suppression_proc),
+            FRAME_SUPPRESSION_ID,
+            pinned_flag_ptr,
+        )
+    };
+    if !installed.as_bool() {
+        return Err("框架抑制子类安装失败".to_string());
+    }
+    Ok(())
+}
+
+/// 钉住态框架抑制的窗口过程（comctl32 子类链最先执行）。
+#[cfg(windows)]
+unsafe extern "system" fn frame_suppression_proc(
+    hwnd: windows::Win32::Foundation::HWND,
+    msg: u32,
+    wparam: windows::Win32::Foundation::WPARAM,
+    lparam: windows::Win32::Foundation::LPARAM,
+    _subclass_id: usize,
+    ref_data: usize,
+) -> windows::Win32::Foundation::LRESULT {
+    use windows::Win32::Foundation::LRESULT;
+    use windows::Win32::UI::Shell::DefSubclassProc;
+    use windows::Win32::UI::WindowsAndMessaging::{WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCPAINT};
+
+    // ref_data 指向 state.desktop_pinned；为空或已退出（指针悬空风险）时不拦截
+    let pinned = if ref_data != 0 {
+        (*(ref_data as *const std::sync::atomic::AtomicBool)).load(Ordering::Acquire)
+    } else {
+        false
+    };
+
+    if pinned {
+        match msg {
+            // 客户区 = 整窗：标题栏区域不存在
+            WM_NCCALCSIZE if wparam != windows::Win32::Foundation::WPARAM(0) => {
+                return LRESULT(0);
+            }
+            // 不绘制非客户区
+            WM_NCPAINT => return LRESULT(0),
+            // 激活状态变化不重画非客户区
+            WM_NCACTIVATE => return LRESULT(1),
+            _ => {}
+        }
+    }
+    DefSubclassProc(hwnd, msg, wparam, lparam)
 }
 
 /// 钉/解钉的实际窗口手术，必须在主线程（窗口属主线程序）调用。
