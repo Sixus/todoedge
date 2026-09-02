@@ -37,26 +37,7 @@ pub fn run() {
             let main_window = app.get_webview_window("main").expect("未找到主窗口");
             window_ctl::initialize(&main_window, &window_state)
                 .unwrap_or_else(|e| panic!("窗口初始化失败：{e}"));
-            // 钉住态框架抑制（M3-5）：失焦等事件触发 tao 样式缓存刷新写回标题栏
-            // 样式位时，靠消息拦截保证外框画不出来
-            window_ctl::install_frame_suppression(&main_window, &window_state)
-                .unwrap_or_else(|e| eprintln!("框架抑制安装失败：{e}"));
-            // 销毁事件监听必须先于恢复钉住注册：启动恢复期间的销毁也要能接到
-            let app_for_destroy = app.handle().clone();
-            main_window.on_window_event(move |event| {
-                if let tauri::WindowEvent::Destroyed = event {
-                    window_ctl::handle_main_window_destroyed(&app_for_destroy);
-                }
-            });
-            window_ctl::start_fullscreen_monitor(app.handle().clone(), window_state.clone());
-            // 钉到桌面（M3-5）：上次会话 pin 过则自动恢复钉住；explorer 重启/分辨率
-            // 变化后的重钉由监听线程兜底
-            window_ctl::restore_desktop_pin(
-                &main_window,
-                &window_state,
-                app.state::<crate::db::Db>().inner(),
-            );
-            window_ctl::start_shell_listener(app.handle().clone());
+            window_ctl::start_fullscreen_monitor(main_window, window_state.clone());
             app.manage(window_state);
 
             // 通知线程先于调度器启动（回调依赖 Db State；调度器会投递 Toast）
@@ -84,19 +65,7 @@ pub fn run() {
             window_ctl::move_strip_window,
             window_ctl::persist_strip_position,
             window_ctl::reset_strip_position,
-            window_ctl::set_desktop_pin,
-            window_ctl::current_window_mode,
         ])
-        .build(tauri::generate_context!())
-        .expect("error while running tauri application")
-        .run(|app_handle: &tauri::AppHandle, event| {
-            // 退出阶段窗口销毁是正常流程，标记退出避免触发主窗口重建
-            if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
-                if let Some(state) = app_handle
-                    .try_state::<std::sync::Arc<window_ctl::WindowCtlState>>()
-                {
-                    state.inner().mark_exiting();
-                }
-            }
-        });
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }

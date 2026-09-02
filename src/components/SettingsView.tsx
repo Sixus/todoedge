@@ -26,10 +26,6 @@ import {
 
 interface SettingsViewProps {
   onClose: () => void;
-  /** 钉到桌面（M3-5）：面板是否常驻壁纸层 */
-  desktopPinned: boolean;
-  /** 钉/解钉桌面；失败原样抛出，调用方提示且状态不变 */
-  onToggleDesktopPin: (enabled: boolean) => Promise<void>;
 }
 
 function errorMessage(error: unknown): string {
@@ -41,7 +37,7 @@ function errorMessage(error: unknown): string {
  * 排版遵循 Windows 11 设置样式：卡片行 + 主标签 + 次级说明 + 右侧控件。
  * 改动即存：外观/间隔写 settings 表；自启走 tauri-plugin-autostart。
  */
-export function SettingsView({ onClose, desktopPinned, onToggleDesktopPin }: SettingsViewProps) {
+export function SettingsView({ onClose }: SettingsViewProps) {
   const [material, setMaterial] = useState<Material>("glass");
   const [theme, setTheme] = useState<ThemeMode>("auto");
   const [hotkey, setHotkey] = useState(DEFAULT_HOTKEY);
@@ -211,26 +207,6 @@ export function SettingsView({ onClose, desktopPinned, onToggleDesktopPin }: Set
             实体
           </button>
         </div>
-      </div>
-
-      {/* 钉到桌面（M3-5）：窗口形态开关，放在顶部便于直达 */}
-      <div className="settings-row">
-        <div className="settings-text">
-          <p className="settings-label">钉到桌面</p>
-          <p className="settings-desc">面板常驻桌面壁纸层，Win+D 不消失；关闭恢复贴边模式</p>
-        </div>
-        <button
-          aria-checked={desktopPinned}
-          aria-label={`钉到桌面，当前${desktopPinned ? "已钉住" : "未钉住"}`}
-          className="settings-switch"
-          onClick={() => {
-            void onToggleDesktopPin(!desktopPinned).catch((cause) =>
-              setError(errorMessage(cause)),
-            );
-          }}
-          role="switch"
-          type="button"
-        />
       </div>
 
       <div className="settings-row">

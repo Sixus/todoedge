@@ -599,11 +599,9 @@ button {
   opacity: 0.5;
 }
 
-/* 图钉固定/钉到桌面激活态：覆盖 .icon-btn 的默认/hover 颜色 */
+/* 图钉固定激活态：覆盖 .icon-btn 的默认/hover 颜色 */
 .icon-btn.pin-active,
-.icon-btn.desktop-pin-active,
-.icon-btn.pin-active:hover:not(:disabled),
-.icon-btn.desktop-pin-active:hover:not(:disabled) {
+.icon-btn.pin-active:hover:not(:disabled) {
   color: var(--check-bg);
 }
 

@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dayjs from "dayjs";
 
 import type { Task } from "../lib/api";
 import { formatOverviewDate } from "../lib/format";
-import { CompletedIcon, DesktopPinIcon, PinIcon, SettingsIcon } from "./icons";
+import { CompletedIcon, PinIcon, SettingsIcon } from "./icons";
 import { ReportView } from "./ReportView";
 import { SettingsView } from "./SettingsView";
 import { TaskInput } from "./TaskInput";
@@ -16,10 +16,6 @@ interface PanelProps {
   /** 图钉固定：固定时屏蔽一切自动收起（移出/点外部/Esc/失焦），全屏强制收回除外 */
   pinned: boolean;
   onTogglePin: () => void;
-  /** 钉到桌面（M3-5）：面板常驻壁纸层时同样屏蔽一切自动收起 */
-  desktopPinned: boolean;
-  /** 钉/解钉桌面；失败原样抛出，由调用方提示（底栏与设置视图都有入口） */
-  onDesktopPinToggle: (enabled: boolean) => Promise<void>;
   onAdd: (title: string, remindAt?: string | null) => Promise<void>;
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
@@ -40,8 +36,6 @@ export function Panel({
   error,
   pinned,
   onTogglePin,
-  desktopPinned,
-  onDesktopPinToggle,
   onAdd,
   onToggle,
   onDelete,
@@ -60,27 +54,13 @@ export function Panel({
   const [showSettings, setShowSettings] = useState(false);
   // 周报视图：点底栏「已完成」覆盖面板（M3-1）
   const [showReport, setShowReport] = useState(false);
-  // 钉到桌面失败提示（M3-5 底栏入口；设置视图自己管理自己的报错）
-  const [desktopPinError, setDesktopPinError] = useState<string | null>(null);
 
-  // 底栏钉桌面开关：成功清掉旧报错，失败把错误亮在底栏上方
-  const toggleDesktopPin = useCallback(
-    (enabled: boolean) => {
-      void onDesktopPinToggle(enabled)
-        .then(() => setDesktopPinError(null))
-        .catch((cause) =>
-          setDesktopPinError(cause instanceof Error ? cause.message : String(cause)),
-        );
-    },
-    [onDesktopPinToggle],
-  );
-
-  // 图钉/钉桌面激活时清掉已排队的自动收起
+  // 图钉激活时清掉已排队的自动收起
   useEffect(() => {
-    if (pinned || desktopPinned) {
+    if (pinned) {
       clearCollapseTimer();
     }
-  }, [pinned, desktopPinned]);
+  }, [pinned]);
 
   // 当前时刻：面板长开时也要流动，否则概览统计/过期标记/排序会停在挂载瞬间
   const [now, setNow] = useState(() => dayjs());
@@ -116,8 +96,8 @@ export function Panel({
   }
 
   function requestCollapse() {
-    // 图钉固定 / 钉到桌面：移出/点外部/Esc/失焦等自动收起全部失效
-    if (pinned || desktopPinned) {
+    // 图钉固定：移出/点外部/Esc/失焦等自动收起全部失效
+    if (pinned) {
       return;
     }
     clearCollapseTimer();
@@ -181,8 +161,7 @@ export function Panel({
       isEditingRef.current = false;
       onEditingChange(false);
     };
-    // requestCollapse 依赖 pinned/desktopPinned，监听器要随之重挂，别留旧闭包
-  }, [onEditingChange, pinned, desktopPinned]);
+  }, [onEditingChange]);
 
   return (
     <main
@@ -195,11 +174,7 @@ export function Panel({
       {showReport ? (
         <ReportView onClose={() => setShowReport(false)} onDelete={onDelete} tasks={tasks} />
       ) : showSettings ? (
-        <SettingsView
-          desktopPinned={desktopPinned}
-          onClose={() => setShowSettings(false)}
-          onToggleDesktopPin={onDesktopPinToggle}
-        />
+        <SettingsView onClose={() => setShowSettings(false)} />
       ) : (
         <>
           {/* ① 概览区 */}
@@ -256,13 +231,6 @@ export function Panel({
         ) : null}
       </section>
 
-      {/* 钉到桌面失败提示：亮在底栏上方（M3-5 底栏入口） */}
-      {desktopPinError ? (
-        <p className="px-5 pb-1 text-xs text-[color:var(--danger)]" role="alert">
-          {desktopPinError}
-        </p>
-      ) : null}
-
       {/* ④ 底栏 */}
       <footer className="flex items-center justify-between border-t border-[var(--border-subtle)] py-1.5 pl-5 pr-2.5">
         <span className="text-xs text-[color:var(--fg-muted)]">未完成 {pendingCount}</span>
@@ -275,16 +243,6 @@ export function Panel({
             type="button"
           >
             <CompletedIcon className="h-[18px] w-[18px]" />
-          </button>
-          <button
-            aria-label={desktopPinned ? "取消钉到桌面" : "钉到桌面"}
-            aria-pressed={desktopPinned}
-            className={`icon-btn ${desktopPinned ? "desktop-pin-active" : ""}`}
-            onClick={() => toggleDesktopPin(!desktopPinned)}
-            title={desktopPinned ? "取消钉到桌面" : "钉到桌面（Win+D 不消失）"}
-            type="button"
-          >
-            <DesktopPinIcon className="h-[18px] w-[18px]" />
           </button>
           <button
             aria-label={pinned ? "取消固定面板" : "固定面板"}

@@ -37,8 +37,6 @@ export const api = {
     invoke<void>("set_panel_animations", { enabled }),
   expandPanel: () => invoke<WindowMode>("expand_panel"),
   collapsePanel: () => invoke<WindowMode>("collapse_panel"),
-  /** 启动时主动查一次当前模式（启动即钉桌面时前端会错过模式事件） */
-  currentWindowMode: () => invoke<WindowMode>("current_window_mode"),
   setPanelEditing: (editing: boolean) =>
     invoke<void>("set_panel_editing", { editing }),
   /** 拖动细条：把指针位移增量（逻辑像素）交给 Rust 移动窗口 y（x 恒贴右缘），不落库 */
@@ -51,7 +49,4 @@ export const api = {
   /** 设置全局热键（如 "Ctrl+Alt+KeyT"）；注册成功才落库并回显，失败 Err 且旧热键保持 */
   setGlobalHotkey: (hotkey: string) =>
     invoke<string>("set_global_hotkey", { hotkey }),
-  /** 钉到桌面（M3-5）：面板常驻桌面层（壁纸之上、应用之下）；失败 Err 且状态不变 */
-  setDesktopPin: (enabled: boolean) =>
-    invoke<void>("set_desktop_pin", { enabled }),
 };
