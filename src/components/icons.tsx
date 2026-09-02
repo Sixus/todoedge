@@ -106,3 +106,16 @@ export function PinIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+/** 显示器+图钉：钉到桌面（M3-5，激活时蓝色高亮，面板常驻桌面层） */
+export function DesktopPinIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <rect x="2.5" y="7" width="14" height="10" rx="2" />
+      <path d="M9.5 17v3.5" />
+      <path d="M6 20.5h7" />
+      <circle cx="19" cy="5.5" r="2.2" />
+      <path d="M19 7.7v4.8" />
+    </svg>
+  );
+}
