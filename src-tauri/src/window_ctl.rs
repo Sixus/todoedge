@@ -759,8 +759,7 @@ mod worker_w {
 }
 
 /// 摘掉窗口的非客户区边框样式（WS_CAPTION/WS_THICKFRAME/WS_EX_CLIENTEDGE）。
-/// 必须先走 tao 自己的 set_decorations(false) 再物理摘除：直接改样式会被
-/// tao 的内部样式缓存在下一次状态刷新（如失焦）时写回，外框重现。
+/// 调用时机有讲究：必须在 set_always_on_top 之后、SetParent 之前（见调用处）。
 #[cfg(windows)]
 fn strip_frame_styles(hwnd: windows::Win32::Foundation::HWND) -> Result<(), String> {
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -810,15 +809,13 @@ fn pin_to_desktop_layer(
         worker = worker_w::find_desktop_worker_w();
     }
     let worker = worker.ok_or_else(|| "未能定位桌面壁纸层（WorkerW），请稍后重试".to_string())?;
-    // 让 tao 把「无边框」写进自己的样式缓存（否则失焦时缓存刷新会把
-    // 标题栏样式写回来，外框重现），随后物理摘除残留的边框位
-    window
-        .set_decorations(false)
-        .map_err(|error| error.to_string())?;
-    strip_frame_styles(hwnd)?;
     window
         .set_always_on_top(false)
         .map_err(|error| error.to_string())?;
+    // 摘边框必须放在 set_always_on_top 之后：tao 的 always_on_top 会按内部
+    // 缓存重写窗口样式（把标题栏位带回来），先摘会被覆盖、失焦后外框重现；
+    // 摘除后直到 SetParent 之间不再有任何样式写入，即可稳定保持无边框
+    strip_frame_styles(hwnd)?;
     worker_w::parent_to_worker(hwnd, worker)
 }
 
