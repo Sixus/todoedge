@@ -13,9 +13,12 @@ interface PanelProps {
   tasks: Task[];
   isLoading: boolean;
   error: string | null;
+  /** 全局动画总开关：提示条与清单内动画据此启停（窗口滑出/缩进在 Rust 侧） */
+  animationsEnabled: boolean;
   /** 图钉固定：固定时屏蔽一切自动收起（移出/点外部/Esc/失焦），全屏强制收回除外 */
   pinned: boolean;
   onTogglePin: () => void;
+  onChangeAnimations: (enabled: boolean) => void;
   onAdd: (title: string, remindAt?: string | null) => Promise<void>;
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
@@ -36,8 +39,10 @@ export function Panel({
   tasks,
   isLoading,
   error,
+  animationsEnabled,
   pinned,
   onTogglePin,
+  onChangeAnimations,
   onAdd,
   onToggle,
   onDelete,
@@ -67,6 +72,8 @@ export function Panel({
   >([]);
   const undoTimers = useRef(new Map<number, number>());
   const nextUndoToastId = useRef(0);
+  // 正在播渐隐退场动画的提示条：动画结束后才真正移除（关动画时直接移除）
+  const [closingToastIds, setClosingToastIds] = useState<number[]>([]);
 
   // 图钉激活时清掉已排队的自动收起，并同步镜像供各事件闭包读取
   useEffect(() => {
@@ -151,6 +158,21 @@ export function Panel({
     setUndoToasts((current) => current.filter((toast) => toast.id !== id));
   }
 
+  /** 两段式收起：开动画时先渐隐再移除；关动画时直接移除 */
+  function beginUndoToastClose(id: number) {
+    if (!animationsEnabled) {
+      removeUndoToast(id);
+      return;
+    }
+    setClosingToastIds((current) =>
+      current.includes(id) ? current : [...current, id],
+    );
+    window.setTimeout(() => {
+      setClosingToastIds((current) => current.filter((closing) => closing !== id));
+      removeUndoToast(id);
+    }, 180);
+  }
+
   function showUndoToast(message: string, undo: () => void) {
     const id = nextUndoToastId.current++;
     setUndoToasts((current) => [{ id, message, undo }, ...current]);
@@ -158,14 +180,14 @@ export function Panel({
       id,
       window.setTimeout(() => {
         undoTimers.current.delete(id);
-        setUndoToasts((current) => current.filter((toast) => toast.id !== id));
+        beginUndoToastClose(id);
       }, 15000),
     );
   }
 
   function handleUndoClick(id: number) {
     const toast = undoToasts.find((item) => item.id === id);
-    removeUndoToast(id);
+    beginUndoToastClose(id);
     toast?.undo();
   }
 
@@ -284,7 +306,11 @@ export function Panel({
       {showReport ? (
         <ReportView onClose={() => setShowReport(false)} onDelete={handleDeleteWithUndo} tasks={tasks} />
       ) : showSettings ? (
-        <SettingsView onClose={() => setShowSettings(false)} />
+        <SettingsView
+          animationsEnabled={animationsEnabled}
+          onChangeAnimations={onChangeAnimations}
+          onClose={() => setShowSettings(false)}
+        />
       ) : (
         <>
           {/* ① 概览区 */}
@@ -329,6 +355,7 @@ export function Panel({
         ) : null}
         {!isLoading && !error ? (
           <TaskList
+            animationsEnabled={animationsEnabled}
             highlightTaskId={highlightTaskId}
             now={now}
             onHighlightEnd={onHighlightEnd}
@@ -378,11 +405,18 @@ export function Panel({
         </>
       )}
 
-      {/* 撤销 toast：浮在所有视图（含周报）之上；多条堆叠，新触发的在上 */}
+      {/* 撤销 toast：浮在所有视图（含周报）之上；多条堆叠，新触发的在上。
+          弹出自下而上滑入，消失渐隐；动画受全局开关控制 */}
       {undoToasts.length > 0 ? (
         <div className="undo-toast-stack">
           {undoToasts.map((toast) => (
-            <div className="undo-toast" key={toast.id} role="status">
+            <div
+              className={`undo-toast${animationsEnabled ? " undo-toast-anim" : ""}${
+                closingToastIds.includes(toast.id) ? " undo-toast-closing" : ""
+              }`}
+              key={toast.id}
+              role="status"
+            >
               <span className="undo-toast-text">{toast.message}</span>
               <button
                 className="undo-toast-btn"

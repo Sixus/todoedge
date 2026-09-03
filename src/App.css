@@ -874,3 +874,97 @@ button {
 .undo-toast-btn:hover {
   background: var(--surface-hover);
 }
+
+/* ---------- 动画（feature/animations 分支）：全部受设置里「动画」总开关控制，
+   关闭时组件不挂动画类，行为与无动画一致 ---------- */
+
+/* 撤销 toast：弹出自下而上滑入，消失渐隐（两段式：先播退场再移除） */
+@keyframes undo-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.undo-toast-anim {
+  animation: undo-toast-in 160ms ease-out;
+}
+
+@keyframes undo-toast-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.undo-toast-anim.undo-toast-closing {
+  animation: undo-toast-out 180ms ease-in forwards;
+}
+
+/* 任务行入场（新增任务）：自上轻轻落入 */
+@keyframes task-item-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.task-item-enter {
+  animation: task-item-enter 200ms ease-out;
+}
+
+/* 任务行离场（勾选完成）：右滑渐隐 + 高度收拢，动画期间禁点；
+   覆盖行上的 min-h（未分层工具类），收拢后由 TaskList 移除 */
+@keyframes task-item-leave {
+  from {
+    opacity: 1;
+    max-height: 48px;
+  }
+  to {
+    opacity: 0;
+    max-height: 0;
+    transform: translateX(12px);
+  }
+}
+
+.task-item-leave {
+  min-height: 0;
+  overflow: hidden;
+  animation: task-item-leave 240ms ease-in forwards;
+  pointer-events: none;
+}
+
+/* 分组展开/收起：grid-rows 0fr↔1fr 过渡，内容常驻挂载 */
+.task-group-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 200ms ease;
+}
+
+.task-group-body-open {
+  grid-template-rows: 1fr;
+}
+
+.task-group-body-instant {
+  transition: none;
+}
+
+.task-group-body > ul {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 动画总开关关闭时：分组箭头旋转也瞬时完成 */
+.task-group-anim-off .task-group-chevron {
+  transition: none;
+}

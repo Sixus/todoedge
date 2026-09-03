@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dayjs, { type Dayjs } from "dayjs";
 
 import type { Task } from "../lib/api";
@@ -11,6 +11,8 @@ type DropPosition = "before" | "after";
 interface TaskListProps {
   tasks: Task[];
   now: Dayjs;
+  /** 全局动画总开关：入场/离场与分组展开动画据此启停 */
+  animationsEnabled: boolean;
   highlightTaskId: number | null;
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
@@ -36,6 +38,7 @@ interface DragState {
 export function TaskList({
   tasks,
   now,
+  animationsEnabled,
   highlightTaskId,
   onToggle,
   onDelete,
@@ -75,6 +78,63 @@ export function TaskList({
     onRowPointerMove: () => {},
     onRowPointerUp: () => {},
   };
+
+  // 入场/离场动画追踪（仅开动画时）：上一帧未完成集与本帧对比——
+  // 新出现的行播入场（新增任务），因「勾选完成」消失的行渐隐收拢离场；
+  // 删除不播离场（撤销提示已反馈消失原因）。首次挂载不播，避免面板
+  // 展开时整列齐动。
+  const knownPendingRef = useRef<Map<number, Task> | null>(null);
+  const animTimerRef = useRef<number | null>(null);
+  const [enteringIds, setEnteringIds] = useState<number[]>([]);
+  const [leavingTasks, setLeavingTasks] = useState<Task[]>([]);
+
+  useEffect(
+    () => () => {
+      if (animTimerRef.current !== null) {
+        window.clearTimeout(animTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const previous = knownPendingRef.current;
+    knownPendingRef.current = new Map(pendingTasks.map((task) => [task.id, task]));
+
+    // 函数式清空：空数组时返回原引用，避免无变化也触发重渲染
+    function clearTransition() {
+      setEnteringIds((current) => (current.length > 0 ? [] : current));
+      setLeavingTasks((current) => (current.length > 0 ? [] : current));
+    }
+
+    if (previous === null || !animationsEnabled) {
+      clearTransition();
+      return;
+    }
+
+    const currentIds = new Set(pendingTasks.map((task) => task.id));
+    const entered = pendingTasks
+      .filter((task) => !previous.has(task.id))
+      .map((task) => task.id);
+    const left = [...previous.keys()]
+      .filter((id) => !currentIds.has(id))
+      .map((id) => tasks.find((candidate) => candidate.id === id && candidate.done))
+      .filter((task): task is Task => task !== undefined);
+
+    if (entered.length === 0 && left.length === 0) {
+      return;
+    }
+
+    setEnteringIds(entered);
+    setLeavingTasks(left);
+    if (animTimerRef.current !== null) {
+      window.clearTimeout(animTimerRef.current);
+    }
+    animTimerRef.current = window.setTimeout(() => {
+      animTimerRef.current = null;
+      clearTransition();
+    }, 240);
+  }, [pendingTasks, tasks, animationsEnabled]);
 
   /** 按下：记录候选拖拽（交互控件上不启动）；指针捕获保证后续 move/up 不丢 */
   function handleRowPointerDown(
@@ -189,6 +249,7 @@ export function TaskList({
             highlighted={task.id === highlightTaskId}
             dragging={task.id === dragId}
             dropHint={hintFor(task)}
+            entering={enteringIds.includes(task.id)}
             onRowPointerDown={handleRowPointerDown}
             onRowPointerMove={handleRowPointerMove}
             onRowPointerUp={handleRowPointerUp}
@@ -199,11 +260,32 @@ export function TaskList({
             task={task}
           />
         ))}
+        {/* 勾选完成的离场行：渐隐收拢后移除，同期弹出撤销提示 */}
+        {leavingTasks.map((task) => (
+          <TaskItem
+            key={task.id}
+            {...disabledDrag}
+            leaving
+            now={now}
+            highlighted={false}
+            dragging={false}
+            dropHint={null}
+            onHighlightEnd={onHighlightEnd}
+            onDelete={onDelete}
+            onEditTask={onEditTask}
+            onToggle={onToggle}
+            task={task}
+          />
+        ))}
       </ul>
 
-      {/* 「今日已完成」分组：默认缩起，点标题展开；不提供自建分组（首版） */}
+      {/* 「今日已完成」分组：默认缩起，点标题展开；不提供自建分组（首版）。
+          内容常驻挂载，展开/收起靠 grid-rows 过渡（关动画时瞬时切换） */}
       {doneTodayTasks.length > 0 ? (
-        <section aria-label="今日已完成" className="task-group">
+        <section
+          aria-label="今日已完成"
+          className={`task-group${animationsEnabled ? "" : " task-group-anim-off"}`}
+        >
           <button
             aria-expanded={groupOpen}
             className="task-group-toggle"
@@ -216,7 +298,12 @@ export function TaskList({
             <span className="task-group-title">今日已完成</span>
             <span className="task-group-count">{doneTodayTasks.length}</span>
           </button>
-          {groupOpen ? (
+          <div
+            aria-hidden={!groupOpen}
+            className={`task-group-body${groupOpen ? " task-group-body-open" : ""}${
+              animationsEnabled ? "" : " task-group-body-instant"
+            }`}
+          >
             <ul className="flex flex-col">
               {doneTodayTasks.map((task) => (
                 <TaskItem
@@ -234,7 +321,7 @@ export function TaskList({
                 />
               ))}
             </ul>
-          ) : null}
+          </div>
         </section>
       ) : null}
     </div>

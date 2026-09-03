@@ -34,6 +34,9 @@ function App() {
   const [collapsed, setCollapsed] = useState(true);
   const [highlightTaskId, setHighlightTaskId] = useState<number | null>(null);
   const [pinned, setPinned] = useState(false);
+  // 全局动画总开关（M4 反馈）：面板滑出/缩进、勾选完成、分组展开、新增任务、
+  // 撤销提示全部受它控制；设置表持久化，同一开关同步给 Rust 侧窗口动画
+  const [animationsEnabled, setAnimationsEnabled] = useState(true);
   const isTransitioning = useRef(false);
 
   // 外观材质：启动读持久化值（设置视图与面板同文档，改动即时生效，无需跨窗口事件）
@@ -42,10 +45,14 @@ function App() {
       .getSetting(MATERIAL_SETTING_KEY)
       .then((value) => applyMaterial(normalizeMaterial(value)))
       .catch(() => undefined);
-    // 动画开关：设置表持久化，同步给 Rust 侧窗口动画逻辑
+    // 全局动画开关：启动恢复前端状态，并同步给 Rust 侧窗口动画逻辑
     void api
       .getSetting(ANIMATIONS_SETTING_KEY)
-      .then((value) => api.setPanelAnimations(value !== "0"))
+      .then((value) => {
+        const enabled = value !== "0";
+        setAnimationsEnabled(enabled);
+        void api.setPanelAnimations(enabled).catch(() => undefined);
+      })
       .catch(() => undefined);
     // 图钉固定：跨重启记住，并同步给 Rust 侧（编辑态点外部兜底收起要看这个开关）
     void api
@@ -116,6 +123,15 @@ function App() {
     void api.setPanelEditing(editing);
   }, []);
 
+  // 全局动画开关切换：落库 + 同步 Rust 窗口动画 + 更新前端状态
+  const changeAnimations = useCallback((enabled: boolean) => {
+    setAnimationsEnabled(enabled);
+    void api
+      .setSetting(ANIMATIONS_SETTING_KEY, enabled ? "1" : "0")
+      .catch(() => undefined);
+    void api.setPanelAnimations(enabled).catch(() => undefined);
+  }, []);
+
   // 全局禁掉网页默认右键菜单：WebView 菜单带刷新/检查/发送到设备等浏览器项，
   // 输入框里也一样，一律不弹；剪切/复制/粘贴走 Ctrl+X/C/V 快捷键
   useEffect(() => {
@@ -163,11 +179,13 @@ function App() {
 
   return (
     <Panel
+      animationsEnabled={animationsEnabled}
       error={error}
       highlightTaskId={highlightTaskId}
       isLoading={isLoading}
       onAdd={addTask}
       onCollapse={() => void collapsePanel()}
+      onChangeAnimations={changeAnimations}
       onDelete={deleteTask}
       onRestoreTask={restoreTask}
       onEditingChange={setPanelEditing}

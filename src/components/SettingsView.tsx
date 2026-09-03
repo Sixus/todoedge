@@ -10,7 +10,6 @@ import {
   isModifierCode,
 } from "../lib/hotkey";
 import {
-  ANIMATIONS_SETTING_KEY,
   applyMaterial,
   MATERIAL_SETTING_KEY,
   normalizeMaterial,
@@ -25,6 +24,10 @@ import {
 } from "../lib/theme";
 
 interface SettingsViewProps {
+  /** 全局动画总开关当前值（状态在 App 持有，清单/提示条动画共用） */
+  animationsEnabled: boolean;
+  /** 拨动动画开关：App 负责落库、同步 Rust 与更新前端状态 */
+  onChangeAnimations: (enabled: boolean) => void;
   onClose: () => void;
 }
 
@@ -37,13 +40,16 @@ function errorMessage(error: unknown): string {
  * 排版遵循 Windows 11 设置样式：卡片行 + 主标签 + 次级说明 + 右侧控件。
  * 改动即存：外观/间隔写 settings 表；自启走 tauri-plugin-autostart。
  */
-export function SettingsView({ onClose }: SettingsViewProps) {
+export function SettingsView({
+  animationsEnabled,
+  onChangeAnimations,
+  onClose,
+}: SettingsViewProps) {
   const [material, setMaterial] = useState<Material>("glass");
   const [theme, setTheme] = useState<ThemeMode>("auto");
   const [hotkey, setHotkey] = useState(DEFAULT_HOTKEY);
   const [recording, setRecording] = useState(false);
   const [snoozeMinutes, setSnoozeMinutes] = useState("10");
-  const [animations, setAnimations] = useState(true);
   const [autostart, setAutostart] = useState(false);
   const [autostartPending, setAutostartPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,8 +65,6 @@ export function SettingsView({ onClose }: SettingsViewProps) {
         if (savedSnooze !== null && savedSnooze !== "") {
           setSnoozeMinutes(savedSnooze);
         }
-        const savedAnimations = await api.getSetting(ANIMATIONS_SETTING_KEY);
-        setAnimations(savedAnimations !== "0");
         setHotkey((await api.getSetting(HOTKEY_SETTING_KEY)) ?? DEFAULT_HOTKEY);
         setAutostart(await api.autostartStatus());
       } catch (cause) {
@@ -139,16 +143,6 @@ export function SettingsView({ onClose }: SettingsViewProps) {
         setError(errorMessage(cause));
       });
     }
-  }, []);
-
-  const changeAnimations = useCallback((enabled: boolean) => {
-    setAnimations(enabled);
-    void api.setSetting(ANIMATIONS_SETTING_KEY, enabled ? "1" : "0").catch((cause) => {
-      setError(errorMessage(cause));
-    });
-    void api.setPanelAnimations(enabled).catch((cause) => {
-      setError(errorMessage(cause));
-    });
   }, []);
 
   const changeAutostart = useCallback((enabled: boolean) => {
@@ -267,14 +261,16 @@ export function SettingsView({ onClose }: SettingsViewProps) {
 
       <div className="settings-row">
         <div className="settings-text">
-          <p className="settings-label">滑出 / 缩进动画</p>
-          <p className="settings-desc">展开和收起面板时播放过渡动画</p>
+          <p className="settings-label">动画</p>
+          <p className="settings-desc">
+            面板滑出/缩进、勾选完成、分组展开、新增任务与提示条的动画总开关
+          </p>
         </div>
         <button
-          aria-checked={animations}
-          aria-label={`滑出缩进动画，当前${animations ? "开启" : "关闭"}`}
+          aria-checked={animationsEnabled}
+          aria-label={`动画，当前${animationsEnabled ? "开启" : "关闭"}`}
           className="settings-switch"
-          onClick={() => changeAnimations(!animations)}
+          onClick={() => onChangeAnimations(!animationsEnabled)}
           role="switch"
           type="button"
         />
