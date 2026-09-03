@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import dayjs, { type Dayjs } from "dayjs";
 
 import type { Task } from "../lib/api";
@@ -7,6 +7,19 @@ import { ChevronIcon } from "./icons";
 import { TaskItem } from "./TaskItem";
 
 type DropPosition = "before" | "after";
+
+/** 离场动画行：勾选完成后在原位渐隐收拢的任务（oldIndex = 基准帧中的位置） */
+interface LeavingRow {
+  task: Task;
+  oldIndex: number;
+}
+
+/** 一次入场/离场动画的快照；order 为基准帧的未完成 id 序列，供原位插回 */
+interface ListTransition {
+  entering: number[];
+  leaving: LeavingRow[];
+  order: number[];
+}
 
 interface TaskListProps {
   tasks: Task[];
@@ -79,14 +92,14 @@ export function TaskList({
     onRowPointerUp: () => {},
   };
 
-  // 入场/离场动画追踪（仅开动画时）：上一帧未完成集与本帧对比——
-  // 新出现的行播入场（新增任务），因「勾选完成」消失的行渐隐收拢离场；
-  // 删除不播离场（撤销提示已反馈消失原因）。首次挂载不播，避免面板
-  // 展开时整列齐动。
-  const knownPendingRef = useRef<Map<number, Task> | null>(null);
+  // 入场/离场动画追踪（仅开动画时）：数据更新后的那一帧尚未上屏，用
+  // useLayoutEffect 先补帧再绘制——勾选完成的行按上一帧位置「原位保留」
+  // （划线扫过→右滑渐隐→高度收拢，下方元素平滑上移），新增的行高度展开
+  // 把下方推下去；删除不播离场（撤销提示已反馈消失原因）。首次挂载不播，
+  // 避免面板展开时整列齐动。
+  const prevOrderRef = useRef<number[] | null>(null);
   const animTimerRef = useRef<number | null>(null);
-  const [enteringIds, setEnteringIds] = useState<number[]>([]);
-  const [leavingTasks, setLeavingTasks] = useState<Task[]>([]);
+  const [transition, setTransition] = useState<ListTransition | null>(null);
 
   useEffect(
     () => () => {
@@ -97,44 +110,72 @@ export function TaskList({
     [],
   );
 
-  useEffect(() => {
-    const previous = knownPendingRef.current;
-    knownPendingRef.current = new Map(pendingTasks.map((task) => [task.id, task]));
-
-    // 函数式清空：空数组时返回原引用，避免无变化也触发重渲染
-    function clearTransition() {
-      setEnteringIds((current) => (current.length > 0 ? [] : current));
-      setLeavingTasks((current) => (current.length > 0 ? [] : current));
-    }
+  useLayoutEffect(() => {
+    const previous = prevOrderRef.current;
+    const currentIds = pendingTasks.map((task) => task.id);
+    prevOrderRef.current = currentIds;
 
     if (previous === null || !animationsEnabled) {
-      clearTransition();
+      setTransition((current) => (current === null ? current : null));
       return;
     }
 
-    const currentIds = new Set(pendingTasks.map((task) => task.id));
-    const entered = pendingTasks
-      .filter((task) => !previous.has(task.id))
-      .map((task) => task.id);
-    const left = [...previous.keys()]
-      .filter((id) => !currentIds.has(id))
-      .map((id) => tasks.find((candidate) => candidate.id === id && candidate.done))
-      .filter((task): task is Task => task !== undefined);
+    const currentSet = new Set(currentIds);
+    const entered = currentIds.filter((id) => !previous.includes(id));
+    const left = previous
+      .filter((id) => !currentSet.has(id))
+      .map((id) => {
+        const task = tasks.find((candidate) => candidate.id === id && candidate.done);
+        return task ? { task, oldIndex: previous.indexOf(id) } : null;
+      })
+      .filter((row): row is LeavingRow => row !== null);
 
     if (entered.length === 0 && left.length === 0) {
       return;
     }
 
-    setEnteringIds(entered);
-    setLeavingTasks(left);
+    // 连续勾选/新增时叠加；order 锚定最初基准帧，原位插入不漂移
+    setTransition((current) => ({
+      entering: [...(current?.entering ?? []), ...entered],
+      leaving: [...(current?.leaving ?? []), ...left],
+      order: current?.order ?? previous,
+    }));
+
     if (animTimerRef.current !== null) {
       window.clearTimeout(animTimerRef.current);
     }
     animTimerRef.current = window.setTimeout(() => {
       animTimerRef.current = null;
-      clearTransition();
-    }, 240);
+      setTransition((current) => (current === null ? current : null));
+    }, 520);
   }, [pendingTasks, tasks, animationsEnabled]);
+
+  // 渲染序合并：离场行插回基准帧的原位，布局不跳动
+  const mergedRows: Array<{ task: Task; leaving: boolean }> = [];
+  if (transition === null || transition.leaving.length === 0) {
+    for (const task of pendingTasks) {
+      mergedRows.push({ task, leaving: false });
+    }
+  } else {
+    const leavingSorted = [...transition.leaving].sort(
+      (first, second) => first.oldIndex - second.oldIndex,
+    );
+    let cursor = 0;
+    for (const task of pendingTasks) {
+      const oldIndex = transition.order.indexOf(task.id);
+      while (
+        cursor < leavingSorted.length &&
+        (oldIndex === -1 || leavingSorted[cursor].oldIndex < oldIndex)
+      ) {
+        mergedRows.push({ task: leavingSorted[cursor].task, leaving: true });
+        cursor += 1;
+      }
+      mergedRows.push({ task, leaving: false });
+    }
+    for (; cursor < leavingSorted.length; cursor += 1) {
+      mergedRows.push({ task: leavingSorted[cursor].task, leaving: true });
+    }
+  }
 
   /** 按下：记录候选拖拽（交互控件上不启动）；指针捕获保证后续 move/up 不丢 */
   function handleRowPointerDown(
@@ -242,41 +283,41 @@ export function TaskList({
   return (
     <div className="flex flex-col">
       <ul className="flex flex-col">
-        {pendingTasks.map((task) => (
-          <TaskItem
-            key={task.id}
-            now={now}
-            highlighted={task.id === highlightTaskId}
-            dragging={task.id === dragId}
-            dropHint={hintFor(task)}
-            entering={enteringIds.includes(task.id)}
-            onRowPointerDown={handleRowPointerDown}
-            onRowPointerMove={handleRowPointerMove}
-            onRowPointerUp={handleRowPointerUp}
-            onHighlightEnd={onHighlightEnd}
-            onDelete={onDelete}
-            onEditTask={onEditTask}
-            onToggle={onToggle}
-            task={task}
-          />
-        ))}
-        {/* 勾选完成的离场行：渐隐收拢后移除，同期弹出撤销提示 */}
-        {leavingTasks.map((task) => (
-          <TaskItem
-            key={task.id}
-            {...disabledDrag}
-            leaving
-            now={now}
-            highlighted={false}
-            dragging={false}
-            dropHint={null}
-            onHighlightEnd={onHighlightEnd}
-            onDelete={onDelete}
-            onEditTask={onEditTask}
-            onToggle={onToggle}
-            task={task}
-          />
-        ))}
+        {mergedRows.map(({ task, leaving }) =>
+          leaving ? (
+            <TaskItem
+              key={task.id}
+              {...disabledDrag}
+              leaving
+              now={now}
+              highlighted={false}
+              dragging={false}
+              dropHint={null}
+              onHighlightEnd={onHighlightEnd}
+              onDelete={onDelete}
+              onEditTask={onEditTask}
+              onToggle={onToggle}
+              task={task}
+            />
+          ) : (
+            <TaskItem
+              key={task.id}
+              now={now}
+              highlighted={task.id === highlightTaskId}
+              dragging={task.id === dragId}
+              dropHint={hintFor(task)}
+              entering={transition?.entering.includes(task.id) ?? false}
+              onRowPointerDown={handleRowPointerDown}
+              onRowPointerMove={handleRowPointerMove}
+              onRowPointerUp={handleRowPointerUp}
+              onHighlightEnd={onHighlightEnd}
+              onDelete={onDelete}
+              onEditTask={onEditTask}
+              onToggle={onToggle}
+              task={task}
+            />
+          ),
+        )}
       </ul>
 
       {/* 「今日已完成」分组：默认缩起，点标题展开；不提供自建分组（首版）。

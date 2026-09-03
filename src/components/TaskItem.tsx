@@ -118,8 +118,10 @@ export function TaskItem({
         </span>
       </label>
       <span
-        className={`min-w-0 flex-1 truncate text-[14px] leading-[1.45] ${
-          task.done ? "text-[color:var(--done-fg)] line-through" : "text-[color:var(--fg)]"
+        className={`task-title min-w-0 flex-1 truncate text-[14px] leading-[1.45] ${
+          task.done && !leaving
+            ? "text-[color:var(--done-fg)] line-through"
+            : "text-[color:var(--fg)]"
         }`}
       >
         {task.title}

@@ -907,30 +907,37 @@ button {
   animation: undo-toast-out 180ms ease-in forwards;
 }
 
-/* 任务行入场（新增任务）：自上轻轻落入 */
+/* 任务行入场（新增任务）：高度自 0 展开 + 淡入，下方元素随高度平滑下移；
+   覆盖行上的 min-h（未分层样式优先于分层工具类），动画结束后由 TaskList 摘类 */
 @keyframes task-item-enter {
   from {
     opacity: 0;
-    transform: translateY(-6px);
+    max-height: 0;
   }
   to {
     opacity: 1;
-    transform: none;
+    max-height: 48px;
   }
 }
 
 .task-item-enter {
+  min-height: 0;
+  overflow: hidden;
   animation: task-item-enter 200ms ease-out;
 }
 
-/* 任务行离场（勾选完成）：右滑渐隐 + 高度收拢，动画期间禁点；
-   覆盖行上的 min-h（未分层工具类），收拢后由 TaskList 移除 */
+/* 任务行离场（勾选完成）：前 40% 划线扫过保持不透明，随后右滑渐隐并收拢
+   高度（下方元素平滑上移）；动画期间禁点，播完由 TaskList 移除 */
 @keyframes task-item-leave {
-  from {
+  0% {
     opacity: 1;
     max-height: 48px;
   }
-  to {
+  40% {
+    opacity: 1;
+    max-height: 48px;
+  }
+  100% {
     opacity: 0;
     max-height: 0;
     transform: translateX(12px);
@@ -940,8 +947,76 @@ button {
 .task-item-leave {
   min-height: 0;
   overflow: hidden;
-  animation: task-item-leave 240ms ease-in forwards;
+  animation: task-item-leave 460ms ease-in forwards;
   pointer-events: none;
+}
+
+/* 划线扫过：离场前段在标题上从左到右画一条删除线（静态 line-through 此时
+   由 TaskItem 抑制，两条线不叠加） */
+@keyframes task-title-strike {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+.task-item-leave .task-title {
+  position: relative;
+}
+
+.task-item-leave .task-title::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: currentColor;
+  animation: task-title-strike 180ms ease-out forwards;
+}
+
+/* 弹层（提醒选择/编辑）：从锚点方向缩放淡入；点卡片外关闭维持瞬时（无退场） */
+@keyframes picker-card-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.picker-card {
+  transform-origin: top right;
+  animation: picker-card-in 150ms ease-out;
+}
+
+@keyframes picker-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.picker-backdrop {
+  animation: picker-backdrop-in 150ms ease-out;
+}
+
+/* 全局动画总开关关闭：面板内所有入场/退场/弹层动画一律瞬时 */
+.animations-off .task-item-enter,
+.animations-off .task-item-leave,
+.animations-off .picker-card,
+.animations-off .picker-backdrop {
+  animation: none;
+}
+
+.animations-off .task-item-leave {
+  display: none;
 }
 
 /* 分组展开/收起：grid-rows 0fr↔1fr 过渡，内容常驻挂载 */
