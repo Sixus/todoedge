@@ -94,7 +94,7 @@ export function TaskItem({
 
   return (
     <li
-      className={`group flex min-h-[44px] items-center gap-2 rounded-md px-1.5 transition-colors duration-150 hover:bg-[var(--surface-hover)]${
+      className={`group flex min-h-[var(--task-row-h)] items-center gap-2 rounded-md px-1.5 transition-colors duration-150 hover:bg-[var(--surface-hover)]${
         highlighted ? " task-highlight" : ""
       }${dropHint ? ` drop-${dropHint}` : ""}${dragging ? " opacity-50" : ""}${
         entering ? " task-item-enter" : ""

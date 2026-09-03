@@ -878,6 +878,11 @@ button {
 /* ---------- 动画（feature/animations 分支）：全部受设置里「动画」总开关控制，
    关闭时组件不挂动画类，行为与无动画一致 ---------- */
 
+/* 任务行静态高度（TaskItem 的 min-h 与行级动画的 height 共用，改行高只改这里） */
+:root {
+  --task-row-h: 44px;
+}
+
 /* 撤销 toast：弹出自下而上滑入，消失渐隐（两段式：先播退场再移除） */
 @keyframes undo-toast-in {
   from {
@@ -907,40 +912,41 @@ button {
   animation: undo-toast-out 180ms ease-in forwards;
 }
 
-/* 任务行入场（新增任务）：高度自 0 展开 + 淡入，下方元素随高度平滑下移；
-   覆盖行上的 min-h（未分层样式优先于分层工具类），动画结束后由 TaskList 摘类 */
+/* 任务行入场（新增任务/撤销打回）：height 自 0 精确展开到静态行高（44px），
+   淡入同时下方元素平滑下移；起止高度与静态布局一致，摘类后无跳变。
+   min-height 压 0 是为了让 height 能从 0 起步，forwards 让结束态稳定在行高 */
 @keyframes task-item-enter {
   from {
     opacity: 0;
-    max-height: 0;
+    height: 0;
   }
   to {
     opacity: 1;
-    max-height: 48px;
+    height: var(--task-row-h);
   }
 }
 
 .task-item-enter {
   min-height: 0;
   overflow: hidden;
-  animation: task-item-enter 200ms ease-out;
+  animation: task-item-enter 200ms ease-out forwards;
 }
 
-/* 任务行离场（勾选完成）：前 40% 划线扫过保持不透明，随后右滑渐隐并收拢
-   高度（下方元素平滑上移）；动画期间禁点，播完由 TaskList 移除 */
+/* 任务行离场（勾选完成）：前 40% 保持静态行高让划线扫过，随后渐隐、
+   高度收拢到 0（下方元素平滑上移）；不位移，避免触发横向滚动条。
+   动画期间禁点，播完由 TaskList 移除 */
 @keyframes task-item-leave {
   0% {
     opacity: 1;
-    max-height: 48px;
+    height: var(--task-row-h);
   }
   40% {
     opacity: 1;
-    max-height: 48px;
+    height: var(--task-row-h);
   }
   100% {
     opacity: 0;
-    max-height: 0;
-    transform: translateX(12px);
+    height: 0;
   }
 }
 
