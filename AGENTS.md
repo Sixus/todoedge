@@ -24,6 +24,11 @@ npm run tauri dev   # 开发运行
 npm run tauri build # 打安装包
 cargo check         # Rust 编译检查（在 src-tauri/ 下）
 
+## 打包发布规则（2026-09-03 用户约定）
+1. 每次打包前必须确认版本号：tauri.conf.json / Cargo.toml / package.json 三处同步升，
+   设置页「V 主.次」自动跟随。用户没主动提版本号就先问；明确说不升才沿用旧版。
+2. 每次打包后在 docs/版本记录.md 追加一行：版本号 + 日期 + 本次包含的主要内容。
+
 ## 用户背景
 用户无代码基础：解释用日常语言；验证只靠运行应用看效果；git 由你全权代管，
 用户说"提交"才 commit，说"回滚"才 revert。

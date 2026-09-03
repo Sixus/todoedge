@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { getVersion } from "@tauri-apps/api/app";
+
 import { api } from "../lib/api";
 import {
   DEFAULT_HOTKEY,
@@ -53,6 +55,18 @@ export function SettingsView({
   const [autostart, setAutostart] = useState(false);
   const [autostartPending, setAutostartPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 版本号显示：从应用真实版本（tauri.conf.json）推导「V 主.次」，
+  // 升版本只改配置文件，这里自动跟随
+  const [versionLabel, setVersionLabel] = useState("V 1.1");
+
+  useEffect(() => {
+    void getVersion()
+      .then((version) => {
+        const [major, minor] = version.split(".");
+        setVersionLabel(`V ${major}.${minor}`);
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -339,7 +353,7 @@ export function SettingsView({
       >
         完全退出
       </button>
-      <p className="settings-version">V 1.0</p>
+      <p className="settings-version">{versionLabel}</p>
     </div>
   );
 }
