@@ -50,6 +50,7 @@ pub fn run() {
             commands::add_task,
             commands::toggle_task,
             commands::delete_task,
+            commands::restore_task,
             commands::update_task,
             commands::clear_reminder,
             commands::reorder_tasks,

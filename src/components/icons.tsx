@@ -106,3 +106,12 @@ export function PinIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+/** ⌄ 分组展开/缩起箭头（展开时旋转 180°） */
+export function ChevronIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <polyline points="8 10 12 14 16 10" />
+    </svg>
+  );
+}

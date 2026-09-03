@@ -3,6 +3,7 @@ import dayjs, { type Dayjs } from "dayjs";
 
 import type { Task } from "../lib/api";
 import { sortTasks } from "../lib/taskSort";
+import { ChevronIcon } from "./icons";
 import { TaskItem } from "./TaskItem";
 
 type DropPosition = "before" | "after";
@@ -30,7 +31,7 @@ interface DragState {
 /**
  * 手动排序：Pointer Events 自实现（HTML5 drag & drop 在 NOACTIVATE 窗口和
  * 云桌面环境下事件不可靠，2026-09-01 反馈拖不动）。按住行的空白/标题区拖动，
- * 跨待办/已完成分区的拖放一律忽略。
+ * 仅未完成任务可拖；「今日已完成」分组内按完成时间排列，不参与拖拽。
  */
 export function TaskList({
   tasks,
@@ -42,13 +43,23 @@ export function TaskList({
   onReorder,
   onHighlightEnd,
 }: TaskListProps) {
-  // 主清单只显示未完成 + 今天勾选完成的任务；更早完成的只在周报视图看（2026-09-01 反馈）
-  const visibleTasks = tasks.filter(
-    (task) =>
-      !task.done ||
-      (task.doneAt !== null && dayjs(task.doneAt).isSame(now, "day")),
+  // 主清单只显示未完成任务；今日勾完的归入「今日已完成」分组（默认缩起，
+  // 点标题展开）；更早完成的只在周报视图看（2026-09-01 反馈）
+  const pendingTasks = sortTasks(
+    tasks.filter((task) => !task.done),
+    now,
   );
-  const sortedTasks = sortTasks(visibleTasks, now);
+  const doneTodayTasks = tasks
+    .filter(
+      (task) =>
+        task.done && task.doneAt !== null && dayjs(task.doneAt).isSame(now, "day"),
+    )
+    .sort(
+      (first, second) =>
+        dayjs(second.doneAt!).valueOf() - dayjs(first.doneAt!).valueOf(),
+    );
+  // 分组展开态只在本次面板内有效：面板收起再展开、跨天都回到默认缩起
+  const [groupOpen, setGroupOpen] = useState(false);
 
   const [dragId, setDragId] = useState<number | null>(null);
   const [dropHint, setDropHint] = useState<{ id: number; position: DropPosition } | null>(
@@ -57,6 +68,13 @@ export function TaskList({
   // dropHint 的镜像引用：pointerup 落定时读取最新值，不依赖渲染闭包
   const dropHintRef = useRef<{ id: number; position: DropPosition } | null>(null);
   const dragRef = useRef<DragState | null>(null);
+
+  /** 分组内行为照常（勾选/编辑/删除），仅拖拽排序不启用 */
+  const disabledDrag = {
+    onRowPointerDown: () => {},
+    onRowPointerMove: () => {},
+    onRowPointerUp: () => {},
+  };
 
   /** 按下：记录候选拖拽（交互控件上不启动）；指针捕获保证后续 move/up 不丢 */
   function handleRowPointerDown(
@@ -138,13 +156,11 @@ export function TaskList({
       return;
     }
 
-    // 基于当前显示顺序重排所在分区，另一个分区原样保留
-    const pendingIds = sortedTasks.filter((task) => !task.done).map((task) => task.id);
-    const doneIds = sortedTasks.filter((task) => task.done).map((task) => task.id);
-    const bucket = done ? doneIds : pendingIds;
-    bucket.splice(bucket.indexOf(id), 1);
-    bucket.splice(bucket.indexOf(hint.id) + (hint.position === "after" ? 1 : 0), 0, id);
-    onReorder([...pendingIds, ...doneIds]);
+    // 只有未完成区可拖（分组行不挂拖拽事件），基于当前显示顺序重排
+    const pendingIds = pendingTasks.map((task) => task.id);
+    pendingIds.splice(pendingIds.indexOf(id), 1);
+    pendingIds.splice(pendingIds.indexOf(hint.id) + (hint.position === "after" ? 1 : 0), 0, id);
+    onReorder(pendingIds);
   }
 
   /** 当前行该显示的插入位置提示（拖拽中且悬停在同分区其他行上） */
@@ -155,7 +171,7 @@ export function TaskList({
     return dropHint.position;
   }
 
-  if (sortedTasks.length === 0) {
+  if (pendingTasks.length === 0 && doneTodayTasks.length === 0) {
     return (
       <p className="mt-10 text-center text-[13px] text-[color:var(--fg-muted)]">
         今天没有待办，休息一下
@@ -164,24 +180,63 @@ export function TaskList({
   }
 
   return (
-    <ul className="flex flex-col">
-      {sortedTasks.map((task) => (
-        <TaskItem
-          key={task.id}
-          now={now}
-          highlighted={task.id === highlightTaskId}
-          dragging={task.id === dragId}
-          dropHint={hintFor(task)}
-          onRowPointerDown={handleRowPointerDown}
-          onRowPointerMove={handleRowPointerMove}
-          onRowPointerUp={handleRowPointerUp}
-          onHighlightEnd={onHighlightEnd}
-          onDelete={onDelete}
-          onEditTask={onEditTask}
-          onToggle={onToggle}
-          task={task}
-        />
-      ))}
-    </ul>
+    <div className="flex flex-col">
+      <ul className="flex flex-col">
+        {pendingTasks.map((task) => (
+          <TaskItem
+            key={task.id}
+            now={now}
+            highlighted={task.id === highlightTaskId}
+            dragging={task.id === dragId}
+            dropHint={hintFor(task)}
+            onRowPointerDown={handleRowPointerDown}
+            onRowPointerMove={handleRowPointerMove}
+            onRowPointerUp={handleRowPointerUp}
+            onHighlightEnd={onHighlightEnd}
+            onDelete={onDelete}
+            onEditTask={onEditTask}
+            onToggle={onToggle}
+            task={task}
+          />
+        ))}
+      </ul>
+
+      {/* 「今日已完成」分组：默认缩起，点标题展开；不提供自建分组（首版） */}
+      {doneTodayTasks.length > 0 ? (
+        <section aria-label="今日已完成" className="task-group">
+          <button
+            aria-expanded={groupOpen}
+            className="task-group-toggle"
+            onClick={() => setGroupOpen((open) => !open)}
+            type="button"
+          >
+            <ChevronIcon
+              className={`task-group-chevron${groupOpen ? " task-group-chevron-open" : ""}`}
+            />
+            <span className="task-group-title">今日已完成</span>
+            <span className="task-group-count">{doneTodayTasks.length}</span>
+          </button>
+          {groupOpen ? (
+            <ul className="flex flex-col">
+              {doneTodayTasks.map((task) => (
+                <TaskItem
+                  key={task.id}
+                  {...disabledDrag}
+                  now={now}
+                  highlighted={task.id === highlightTaskId}
+                  dragging={false}
+                  dropHint={null}
+                  onHighlightEnd={onHighlightEnd}
+                  onDelete={onDelete}
+                  onEditTask={onEditTask}
+                  onToggle={onToggle}
+                  task={task}
+                />
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      ) : null}
+    </div>
   );
 }

@@ -54,6 +54,15 @@ export function useTasks() {
     [reload],
   );
 
+  /** 撤销删除：按删除前快照原样恢复 */
+  const restoreTask = useCallback(
+    async (task: Task) => {
+      await api.restoreTask(task);
+      await reload();
+    },
+    [reload],
+  );
+
   /** 编辑任务：标题 + 提醒时间（null = 清除提醒）。改期会重置 notified 重新进入调度 */
   const editTask = useCallback(
     async (id: number, title: string, remindAt: string | null) => {
@@ -85,6 +94,7 @@ export function useTasks() {
     addTask,
     toggleTask,
     deleteTask,
+    restoreTask,
     editTask,
     reorderTasks,
   };

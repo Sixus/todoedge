@@ -19,6 +19,8 @@ interface PanelProps {
   onAdd: (title: string, remindAt?: string | null) => Promise<void>;
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
+  /** 撤销删除：按删除前快照原样恢复（M4 撤销 toast 用） */
+  onRestoreTask: (task: Task) => Promise<void>;
   /** 编辑任务标题 + 提醒时间（M2-3 编辑弹层；null = 清除提醒） */
   onEditTask: (id: number, title: string, remindAt: string | null) => Promise<void>;
   /** 拖拽排序落定：按新顺序提交全部任务 id */
@@ -39,6 +41,7 @@ export function Panel({
   onAdd,
   onToggle,
   onDelete,
+  onRestoreTask,
   onEditTask,
   onReorder,
   onCollapse,
@@ -57,6 +60,13 @@ export function Panel({
   const [showSettings, setShowSettings] = useState(false);
   // 周报视图：点底栏「已完成」覆盖面板（M3-1）
   const [showReport, setShowReport] = useState(false);
+  // 撤销 toast（M4 反馈）：完成/删除后底部弹出，15 秒内可撤销；
+  // 多条并存堆叠展示，新触发的排在旧的上方，各自独立倒计时
+  const [undoToasts, setUndoToasts] = useState<
+    Array<{ id: number; message: string; undo: () => void }>
+  >([]);
+  const undoTimers = useRef(new Map<number, number>());
+  const nextUndoToastId = useRef(0);
 
   // 图钉激活时清掉已排队的自动收起，并同步镜像供各事件闭包读取
   useEffect(() => {
@@ -121,6 +131,69 @@ export function Panel({
     }, 1500);
   }
 
+  // 卸载时清掉所有撤销提示的自动消失定时器
+  useEffect(() => {
+    const timers = undoTimers.current;
+    return () => {
+      for (const timer of timers.values()) {
+        window.clearTimeout(timer);
+      }
+      timers.clear();
+    };
+  }, []);
+
+  function removeUndoToast(id: number) {
+    const timer = undoTimers.current.get(id);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      undoTimers.current.delete(id);
+    }
+    setUndoToasts((current) => current.filter((toast) => toast.id !== id));
+  }
+
+  function showUndoToast(message: string, undo: () => void) {
+    const id = nextUndoToastId.current++;
+    setUndoToasts((current) => [{ id, message, undo }, ...current]);
+    undoTimers.current.set(
+      id,
+      window.setTimeout(() => {
+        undoTimers.current.delete(id);
+        setUndoToasts((current) => current.filter((toast) => toast.id !== id));
+      }, 15000),
+    );
+  }
+
+  function handleUndoClick(id: number) {
+    const toast = undoToasts.find((item) => item.id === id);
+    removeUndoToast(id);
+    toast?.undo();
+  }
+
+  /** 打勾完成才弹撤销提示；取消勾选不弹（撤销只覆盖「完成后/删除后」） */
+  function handleToggleWithUndo(id: number) {
+    const task = tasks.find((item) => item.id === id);
+    const willComplete = task ? !task.done : false;
+    return onToggle(id).then(() => {
+      if (task && willComplete) {
+        showUndoToast(`已完成「${task.title}」`, () => {
+          onToggle(id).catch(() => undefined);
+        });
+      }
+    });
+  }
+
+  /** 删除前留存快照，撤销时按快照原样恢复（含原 id 与手动排序） */
+  function handleDeleteWithUndo(id: number) {
+    const snapshot = tasks.find((item) => item.id === id);
+    return onDelete(id).then(() => {
+      if (snapshot) {
+        showUndoToast(`已删除「${snapshot.title}」`, () => {
+          onRestoreTask(snapshot).catch(() => undefined);
+        });
+      }
+    });
+  }
+
   function handleInputFocus() {
     clearCollapseTimer();
     isEditingRef.current = true;
@@ -141,6 +214,35 @@ export function Panel({
       }
     }
 
+    // 仅文本类输入算「编辑中」（01 文档第 68 行），勾选框/普通按钮不算
+    function isTextInput(target: EventTarget | null): boolean {
+      if (!(target instanceof HTMLElement)) {
+        return false;
+      }
+      if (target.isContentEditable) {
+        return true;
+      }
+      if (target instanceof HTMLInputElement) {
+        return ["", "text", "search", "url"].includes(target.type);
+      }
+      return target instanceof HTMLTextAreaElement;
+    }
+
+    // 编辑态统一在面板层用 focusin/focusout 判定：除新建输入框外，
+    // 任务编辑弹层的标题输入框也必须算编辑中——否则编辑任务打字时，
+    // 鼠标一离开面板，1.5 秒后被当空闲态自动收回（用户反馈 2026-09-03）
+    function handleFocusIn(event: FocusEvent) {
+      if (isTextInput(event.target)) {
+        handleInputFocus();
+      }
+    }
+
+    function handleFocusOut(event: FocusEvent) {
+      if (isTextInput(event.target)) {
+        handleInputBlur();
+      }
+    }
+
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -156,11 +258,15 @@ export function Panel({
 
     document.addEventListener("pointerdown", handlePointerDown, true);
     document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("focusin", handleFocusIn, true);
+    document.addEventListener("focusout", handleFocusOut, true);
     window.addEventListener("blur", handleWindowBlur);
     return () => {
       clearCollapseTimer();
       document.removeEventListener("pointerdown", handlePointerDown, true);
       document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("focusin", handleFocusIn, true);
+      document.removeEventListener("focusout", handleFocusOut, true);
       window.removeEventListener("blur", handleWindowBlur);
       isEditingRef.current = false;
       onEditingChange(false);
@@ -176,7 +282,7 @@ export function Panel({
       tabIndex={-1}
     >
       {showReport ? (
-        <ReportView onClose={() => setShowReport(false)} onDelete={onDelete} tasks={tasks} />
+        <ReportView onClose={() => setShowReport(false)} onDelete={handleDeleteWithUndo} tasks={tasks} />
       ) : showSettings ? (
         <SettingsView onClose={() => setShowSettings(false)} />
       ) : (
@@ -203,9 +309,9 @@ export function Panel({
         </p>
       </header>
 
-      {/* ② 新建任务区 */}
+      {/* ② 新建任务区（编辑态判定已上收到面板层 focusin/focusout） */}
       <div className="px-5 pb-2.5">
-        <TaskInput onAdd={onAdd} onBlur={handleInputBlur} onFocus={handleInputFocus} />
+        <TaskInput onAdd={onAdd} />
       </div>
 
       {/* ③ 任务清单区 */}
@@ -226,10 +332,10 @@ export function Panel({
             highlightTaskId={highlightTaskId}
             now={now}
             onHighlightEnd={onHighlightEnd}
-            onDelete={onDelete}
+            onDelete={handleDeleteWithUndo}
             onEditTask={onEditTask}
             onReorder={(orderedIds) => void onReorder(orderedIds)}
-            onToggle={onToggle}
+            onToggle={handleToggleWithUndo}
             tasks={tasks}
           />
         ) : null}
@@ -271,6 +377,24 @@ export function Panel({
       </footer>
         </>
       )}
+
+      {/* 撤销 toast：浮在所有视图（含周报）之上；多条堆叠，新触发的在上 */}
+      {undoToasts.length > 0 ? (
+        <div className="undo-toast-stack">
+          {undoToasts.map((toast) => (
+            <div className="undo-toast" key={toast.id} role="status">
+              <span className="undo-toast-text">{toast.message}</span>
+              <button
+                className="undo-toast-btn"
+                onClick={() => handleUndoClick(toast.id)}
+                type="button"
+              >
+                撤销
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </main>
   );
 }

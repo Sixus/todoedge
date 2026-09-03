@@ -21,6 +21,8 @@ export const api = {
     invoke<Task>("add_task", { title, remindAt }),
   toggleTask: (id: number) => invoke<Task>("toggle_task", { id }),
   deleteTask: (id: number) => invoke<void>("delete_task", { id }),
+  /** 撤销删除：按删除前快照原样恢复（含原完成状态与手动排序） */
+  restoreTask: (task: Task) => invoke<Task>("restore_task", { task }),
   /** 只更新传入的字段，其余保持不变（M2 改期用） */
   updateTask: (id: number, title?: string, remindAt?: string | null) =>
     invoke<Task>("update_task", { id, title, remindAt }),

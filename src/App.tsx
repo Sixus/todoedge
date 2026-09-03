@@ -26,6 +26,7 @@ function App() {
     addTask,
     toggleTask,
     deleteTask,
+    restoreTask,
     editTask,
     reorderTasks,
     reload,
@@ -168,6 +169,7 @@ function App() {
       onAdd={addTask}
       onCollapse={() => void collapsePanel()}
       onDelete={deleteTask}
+      onRestoreTask={restoreTask}
       onEditingChange={setPanelEditing}
       pinned={pinned}
       onTogglePin={togglePin}

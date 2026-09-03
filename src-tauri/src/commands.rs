@@ -2,14 +2,15 @@ use std::sync::{atomic::Ordering, Arc};
 
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension, Row};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use tauri_plugin_autostart::ManagerExt;
 
 use crate::{db::{self, Db}, window_ctl::WindowCtlState};
 
 /// 传给前端的任务结构：camelCase 字段，时间一律 RFC3339 字符串（UTC）。
-#[derive(Serialize)]
+/// Deserialize 供撤销删除回传快照用（restore_task）。
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Task {
     pub id: i64,
@@ -125,6 +126,50 @@ pub fn delete_task(db: State<Db>, id: i64) -> Result<(), String> {
     conn.execute("DELETE FROM tasks WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// 撤销删除：按前端留存的任务快照原样插回（含原 id、完成态与手动排序）。
+/// 原 id 已被占用（删掉当时最大 id 后又新建过任务）时降级为换新 id 恢复，
+/// 内容不丢，仅排序位置可能微调。
+#[tauri::command]
+pub fn restore_task(db: State<Db>, task: Task) -> Result<Task, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let inserted = conn
+        .execute(
+            "INSERT OR IGNORE INTO tasks (id, title, remind_at, notified, done, done_at, sort_order, group_id, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                task.id,
+                task.title,
+                task.remind_at,
+                task.notified,
+                task.done,
+                task.done_at,
+                task.sort_order,
+                task.group_id,
+                task.created_at,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+    if inserted == 0 {
+        conn.execute(
+            "INSERT INTO tasks (title, remind_at, notified, done, done_at, sort_order, group_id, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                task.title,
+                task.remind_at,
+                task.notified,
+                task.done,
+                task.done_at,
+                task.sort_order,
+                task.group_id,
+                task.created_at,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        return task_by_id(&conn, conn.last_insert_rowid());
+    }
+    Ok(task)
 }
 
 /// 只更新传入的字段；JS 侧不传或传 null 的字段保持不变（M2 改期用）。

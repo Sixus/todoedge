@@ -8,11 +8,9 @@ import { ReminderPicker } from "./ReminderPicker";
 
 interface TaskInputProps {
   onAdd: (title: string, remindAt?: string | null) => Promise<void>;
-  onFocus?: () => void;
-  onBlur?: () => void;
 }
 
-export function TaskInput({ onAdd, onFocus, onBlur }: TaskInputProps) {
+export function TaskInput({ onAdd }: TaskInputProps) {
   const [title, setTitle] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   // ⏰ 选择器显式设定的提醒时间；设定后优先于自然语言解析（以选择器修正为准）
@@ -75,9 +73,7 @@ export function TaskInput({ onAdd, onFocus, onBlur }: TaskInputProps) {
           aria-label="新建任务"
           className="h-8 w-full rounded-lg border border-[var(--input-border)] bg-[var(--input-bg)] pl-3 pr-[76px] text-[13px] text-[color:var(--fg)] outline-none transition-colors duration-150 placeholder:text-[11px] placeholder:text-[color:var(--fg-faint)] focus:border-[var(--input-focus)] disabled:bg-[var(--disabled-bg)]"
           disabled={isAdding}
-          onBlur={onBlur}
           onChange={(event) => setTitle(event.target.value)}
-          onFocus={onFocus}
           onKeyDown={handleKeyDown}
           placeholder="添加任务，如：明天9点开会"
           type="text"
