@@ -8,11 +8,12 @@ function errorMessage(error: unknown): string {
 
 export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  // 仅首帧加载显示「加载中」：后台刷新（增删改/通知同步）绝不再置 true——
+  // 否则每次操作都会把 TaskList 连卸带挂，行级入场/离场动画与分组展开态全丢
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
-    setIsLoading(true);
     setError(null);
 
     try {

@@ -187,7 +187,9 @@ export function TaskList({
       return;
     }
     const target = event.target as HTMLElement;
-    if (target.closest("button, input, a, label")) {
+    // 弹层（提醒选择/编辑）整体排除：遮罩被指针捕获后 click 会改道任务行，
+    // 「点卡片外取消」永远收不到（2026-09-03 反馈编辑弹层关不掉）
+    if (target.closest("button, input, a, label, .picker-backdrop, .picker-card")) {
       return;
     }
     event.preventDefault(); // 抑制拖动时的文本选择
