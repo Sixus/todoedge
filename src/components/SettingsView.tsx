@@ -113,8 +113,8 @@ export function SettingsView({
     });
   }, []);
 
-  // 窗口模式背景材质：Rust 落库并即时应用/撤销系统材质（亚克力在 Win11 上
-  // 是微信同款实时模糊；毛玻璃为旧版接口仅 Win10 用；普通透明用于云电脑等）
+  // 窗口模式背景材质：Rust 落库并即时应用/撤销系统材质（亚克力为 Win11
+  // 系统级实时模糊；云电脑/Win10 不支持时表现为普通透明）
   const changeWindowMaterial = useCallback((next: WindowMaterial) => {
     setWindowMaterial(next);
     applyWindowMaterial(next);
@@ -253,8 +253,8 @@ export function SettingsView({
           <div className="settings-text">
             <p className="settings-label">窗口背景</p>
             <p className="settings-desc">
-              亚克力=Win11 实时模糊（微信同款，推荐）；毛玻璃=旧接口，Win11
-              上会发黑卡顿；云电脑/远程桌面选普通透明
+              亚克力=Win11 实时模糊（微信同款，推荐）；云电脑/远程桌面/Win10
+              选普通透明
             </p>
           </div>
           <div className="settings-segment" role="radiogroup" aria-label="窗口背景">
@@ -266,15 +266,6 @@ export function SettingsView({
               type="button"
             >
               亚克力
-            </button>
-            <button
-              aria-checked={windowMaterial === "blur"}
-              className={windowMaterial === "blur" ? "active" : ""}
-              onClick={() => changeWindowMaterial("blur")}
-              role="radio"
-              type="button"
-            >
-              毛玻璃
             </button>
             <button
               aria-checked={windowMaterial === "clear"}

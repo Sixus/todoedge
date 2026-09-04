@@ -327,9 +327,9 @@ export function Panel({
 
   return (
     <main
-      className={`relative flex h-full w-full flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)] text-[color:var(--fg)] outline-none${
-        animationsEnabled ? "" : " animations-off"
-      }`}
+      className={`relative flex h-full w-full flex-col overflow-hidden border border-[var(--border)] bg-[var(--bg)] text-[color:var(--fg)] outline-none${
+        appMode === "window" ? " rounded-lg" : " rounded-xl"
+      }${animationsEnabled ? "" : " animations-off"}`}
       onMouseEnter={clearCollapseTimer}
       onMouseLeave={handleMouseLeave}
       ref={panelRef}

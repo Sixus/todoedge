@@ -1,6 +1,6 @@
 [package]
 name = "todoedge"
-version = "1.2.0-beta.2"
+version = "1.2.0-beta.3"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -42,7 +42,8 @@ windows = { version = "0.61.3", features = [
 ] }
 tauri-plugin-clipboard-manager = "2.3.3"
 # 窗口模式（设置里「运行模式=窗口」）的系统级背景材质：默认走 Win11 DWM
-# SystemBackdrop 亚克力（window_ctl.rs 直接调 DwmSetWindowAttribute），
-# window-vibrancy 仅用于「旧版毛玻璃」兼容档；贴边模式仍走原生逐像素透明
-window-vibrancy = "0.5"
+# SystemBackdrop 亚克力 + 系统圆角（window_ctl.rs 直接调 DwmSetWindowAttribute）；
+# 贴边模式仍走原生逐像素透明（docs/01 第 7 节约定不变）
+# 注：曾用的 window-vibrancy（accent blur/acrylic）在 Win11 上发黑、拖动失效
+# 且掉帧，已随「毛玻璃」外观一并移除（实体机反馈 2026-09-04）
 

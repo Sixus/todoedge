@@ -24,38 +24,36 @@ pub const DEFAULT_STRIP_CENTER_RATIO: f64 = 0.5;
 
 /// settings 键：运行模式（"edge" 贴边 / "window" 窗口），设置页「运行模式」读写
 pub const APP_MODE_SETTING_KEY: &str = "app_mode";
-/// settings 键：窗口模式背景材质（"acrylic" 系统亚克力 / "blur" 旧版毛玻璃 /
-/// "clear" 普通透明）
+/// settings 键：窗口模式背景材质（"acrylic" 系统亚克力 / "clear" 普通透明）。
+/// 旧值 "blur"（毛玻璃，Win8/10 时代的 accent blur 接口）已废弃：Win11 上
+/// 只渲染黑底、拖动中被禁用且严重掉帧（实体机反馈 2026-09-04），启动时
+/// 自动按亚克力处理。
 pub const WINDOW_MATERIAL_SETTING_KEY: &str = "window_material";
 
 /// 窗口模式背景材质。系统亚克力（Win11 DWM SystemBackdrop，微信同款实时
-/// 模糊）是默认与推荐项；「毛玻璃」是 Win8/10 时代的 accent blur 接口，在
-/// Win11 上实测只剩黑色底、拖动中被系统禁用变回透明、且拖动严重掉帧
-/// （实体机反馈 2026-09-04），仅保留给 Win10；普通透明为纯逐像素透色。
+/// 模糊）为默认；普通透明为纯逐像素透色，用于云电脑/远程桌面等不支持
+/// DWM 背景采样的环境。Win10 无亚克力接口，自动表现为普通透明。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum WindowMaterial {
     Acrylic,
-    Blur,
     Clear,
 }
 
 const MATERIAL_ACRYLIC: u8 = 0;
-const MATERIAL_BLUR: u8 = 1;
-const MATERIAL_CLEAR: u8 = 2;
+const MATERIAL_CLEAR: u8 = 1;
 
 impl WindowMaterial {
     fn from_u8(value: u8) -> Self {
-        match value {
-            MATERIAL_BLUR => WindowMaterial::Blur,
-            MATERIAL_CLEAR => WindowMaterial::Clear,
-            _ => WindowMaterial::Acrylic,
+        if value == MATERIAL_CLEAR {
+            WindowMaterial::Clear
+        } else {
+            WindowMaterial::Acrylic
         }
     }
 
     fn as_u8(self) -> u8 {
         match self {
             WindowMaterial::Acrylic => MATERIAL_ACRYLIC,
-            WindowMaterial::Blur => MATERIAL_BLUR,
             WindowMaterial::Clear => MATERIAL_CLEAR,
         }
     }
@@ -63,7 +61,6 @@ impl WindowMaterial {
     pub fn as_str(self) -> &'static str {
         match self {
             WindowMaterial::Acrylic => "acrylic",
-            WindowMaterial::Blur => "blur",
             WindowMaterial::Clear => "clear",
         }
     }
@@ -71,7 +68,6 @@ impl WindowMaterial {
     fn parse(text: &str) -> Result<Self, String> {
         match text {
             "acrylic" => Ok(WindowMaterial::Acrylic),
-            "blur" => Ok(WindowMaterial::Blur),
             "clear" => Ok(WindowMaterial::Clear),
             other => Err(format!("未知窗口背景材质：{other}")),
         }
@@ -160,7 +156,7 @@ impl Default for WindowCtlState {
             strip_center_ratio: AtomicU64::new(DEFAULT_STRIP_CENTER_RATIO.to_bits()),
             generation: AtomicU64::new(0),
             app_mode: AtomicU8::new(APP_MODE_EDGE),
-            window_material: AtomicU8::new(MATERIAL_BLUR),
+            window_material: AtomicU8::new(MATERIAL_ACRYLIC),
         }
     }
 }
@@ -310,7 +306,7 @@ fn animate_to(
 
 /// 贴边模式的「不抢焦点 + 不进任务栏」窗口扩展样式开关。窗口模式必须把
 /// 这两个标志清掉——不可激活的窗口上系统级材质只会渲染纯色兜底（docs/01
-/// 第 7 节实测结论），毛玻璃要求窗口能正常激活。
+/// 第 7 节实测结论），亚克力要求窗口能正常激活。
 #[cfg(windows)]
 fn set_edge_assist_styles(window: &WebviewWindow, enable: bool) -> Result<(), String> {
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -333,89 +329,6 @@ fn set_edge_assist_styles(window: &WebviewWindow, enable: bool) -> Result<(), St
 
 #[cfg(not(windows))]
 fn set_edge_assist_styles(_: &WebviewWindow, _: bool) -> Result<(), String> {
-    Ok(())
-}
-
-/// 窗口模式的系统级毛玻璃：Windows 原生 blur behind（DWM 合成，微信 PC
-/// 侧边栏同款机制），透出桌面壁纸与后方窗口的颜色。只在窗口模式调用——
-/// 贴边主窗口永不激活，系统材质只会渲染纯色兜底。
-#[cfg(windows)]
-fn apply_glass_blur(window: &WebviewWindow) -> Result<(), String> {
-    window_vibrancy::apply_blur(window, None).map_err(|error| error.to_string())
-}
-
-#[cfg(not(windows))]
-fn apply_glass_blur(_: &WebviewWindow) -> Result<(), String> {
-    Ok(())
-}
-
-/// SetWindowCompositionAttribute 未收录进 windows crate（window-vibrancy
-/// 内部同样自行声明链接）：attrib 0x13 = WCA_ACCENT_POLICY，
-/// accent_state 0 = ACCENT_DISABLED。
-#[cfg(windows)]
-#[repr(C)]
-struct AccentPolicy {
-    accent_state: u32,
-    accent_flags: u32,
-    gradient_color: u32,
-    animation_id: u32,
-}
-
-#[cfg(windows)]
-#[repr(C)]
-struct CompositionAttribData {
-    attrib: u32,
-    data: *mut std::ffi::c_void,
-    size: usize,
-}
-
-/// 切回贴边模式时移除毛玻璃。window-vibrancy 只提供应用不提供移除，
-/// 这里把系统合成属性设回 ACCENT_DISABLED，恢复普通逐像素透明窗口。
-/// SetWindowCompositionAttribute 不在 user32 导入库（window-vibrancy 内部
-/// 同样动态加载），运行时从 user32.dll 取函数指针：attrib 0x13 =
-/// WCA_ACCENT_POLICY，accent_state 0 = ACCENT_DISABLED。
-#[cfg(windows)]
-fn clear_glass_blur(window: &WebviewWindow) -> Result<(), String> {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::System::LibraryLoader::{GetProcAddress, GetModuleHandleW};
-
-    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
-    let user32 = unsafe { GetModuleHandleW(windows::core::w!("user32")) }
-        .map_err(|error| error.to_string())?;
-    type SetWindowCompositionAttributeFn =
-        unsafe extern "system" fn(HWND, *mut CompositionAttribData) -> windows::core::BOOL;
-    let proc_address = unsafe {
-        GetProcAddress(
-            user32,
-            windows::core::s!("SetWindowCompositionAttribute"),
-        )
-    };
-    let Some(proc_address) = proc_address else {
-        return Err("当前系统缺少 SetWindowCompositionAttribute".to_string());
-    };
-    let set_attribute: SetWindowCompositionAttributeFn =
-        unsafe { std::mem::transmute(proc_address) };
-
-    let mut accent = AccentPolicy {
-        accent_state: 0,
-        accent_flags: 0,
-        gradient_color: 0,
-        animation_id: 0,
-    };
-    let mut data = CompositionAttribData {
-        attrib: 0x13,
-        data: std::ptr::addr_of_mut!(accent).cast(),
-        size: std::mem::size_of::<AccentPolicy>(),
-    };
-    if unsafe { set_attribute(hwnd, &mut data) }.as_bool() {
-        Ok(())
-    } else {
-        Err("移除系统毛玻璃失败".to_string())
-    }
-}
-
-#[cfg(not(windows))]
-fn clear_glass_blur(_: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
@@ -474,25 +387,52 @@ fn set_system_backdrop(_: &WebviewWindow, _: bool) -> bool {
     false
 }
 
-/// 按当前材质设置应用窗口背景。三种材质互斥，切换时要把上一种的系统状态
-/// 撤干净：亚克力关 accent，毛玻璃/普通透明关 SystemBackdrop。
-fn apply_window_material(
-    window: &WebviewWindow,
-    material: WindowMaterial,
-) -> Result<(), String> {
+/// 让系统把窗口裁成 8px 圆角（Win11 DWMWA_WINDOW_CORNER_PREFERENCE）。
+/// 只在亚克力材质下启用：亚克力底色是系统画满整个矩形窗口的，网页层圆角
+/// 裁不到它，不裁圆四个角就露出方形底色；Win11 还会沿圆角自动描一条系统
+/// 细边线，属正常观感。Win10/云电脑等不支持时返回 false，静默保持方形。
+#[cfg(windows)]
+fn set_window_corner_rounding(window: &WebviewWindow, round: bool) -> bool {
+    use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWMWCP_ROUND,
+        DWM_WINDOW_CORNER_PREFERENCE,
+    };
+
+    let Ok(hwnd) = window.hwnd() else {
+        return false;
+    };
+    let preference = DWM_WINDOW_CORNER_PREFERENCE(if round {
+        DWMWCP_ROUND.0
+    } else {
+        DWMWCP_DONOTROUND.0
+    });
+    unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            std::ptr::from_ref(&preference).cast(),
+            std::mem::size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32,
+        )
+        .is_ok()
+    }
+}
+
+#[cfg(not(windows))]
+fn set_window_corner_rounding(_: &WebviewWindow, _: bool) -> bool {
+    false
+}
+
+/// 按当前材质设置应用窗口背景。两种材质互斥，切换时要把上一种的系统状态
+/// 撤干净（亚克力 = 背景裁圆 + SystemBackdrop 开；普通透明 = 全关）。
+fn apply_window_material(window: &WebviewWindow, material: WindowMaterial) {
     match material {
         WindowMaterial::Acrylic => {
-            clear_glass_blur(window)?;
             set_system_backdrop(window, true);
-            Ok(())
-        }
-        WindowMaterial::Blur => {
-            set_system_backdrop(window, false);
-            apply_glass_blur(window)
+            set_window_corner_rounding(window, true);
         }
         WindowMaterial::Clear => {
             set_system_backdrop(window, false);
-            clear_glass_blur(window)
+            set_window_corner_rounding(window, false);
         }
     }
 }
@@ -585,7 +525,7 @@ fn enter_window_mode(window: &WebviewWindow, state: &Arc<WindowCtlState>) -> Res
     window
         .emit("window-mode-changed", WindowMode::Expanded)
         .map_err(|error| error.to_string())?;
-    apply_window_material(window, state.window_material())?;
+    apply_window_material(window, state.window_material());
     focus_window(window)
 }
 
@@ -811,7 +751,6 @@ pub fn set_app_mode(
             enter_window_mode(&window, state.inner())?;
         }
         AppShellMode::Edge => {
-            clear_glass_blur(&window)?;
             state.set_app_mode_value(AppShellMode::Edge);
             set_edge_assist_styles(&window, true)?;
             window
@@ -823,8 +762,9 @@ pub fn set_app_mode(
             window
                 .set_shadow(false)
                 .map_err(|error| error.to_string())?;
-            // 撤掉窗口模式可能遗留的系统亚克力背景
+            // 撤掉窗口模式可能遗留的系统亚克力背景与系统圆角
             set_system_backdrop(&window, false);
+            set_window_corner_rounding(&window, false);
             // 先撤最小尺寸再收细条：6px 宽远小于窗口模式的最小宽
             window
                 .set_min_size::<LogicalSize<f64>>(None)
@@ -838,7 +778,7 @@ pub fn set_app_mode(
     Ok(shell_mode.as_str().to_string())
 }
 
-/// 设置里切换窗口模式背景材质（毛玻璃↔普通透明）：落库并即时生效。
+/// 设置里切换窗口模式背景材质（亚克力↔普通透明）：落库并即时生效。
 #[tauri::command]
 pub fn set_window_material(
     window: WebviewWindow,
@@ -853,7 +793,7 @@ pub fn set_window_material(
     }
     state.set_window_material_value(material);
     if state.app_mode() == AppShellMode::Window {
-        apply_window_material(&window, material)?;
+        apply_window_material(&window, material);
     }
     Ok(material.as_str().to_string())
 }
