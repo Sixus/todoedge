@@ -1,4 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
+import type { AppMode, WindowMaterial } from "./appMode";
 
 /** 与 Rust 侧 commands::Task 对齐（camelCase），时间一律 RFC3339 字符串（UTC） */
 export interface Task {
@@ -14,6 +17,17 @@ export interface Task {
 }
 
 export type WindowMode = "collapsed" | "expanded";
+
+/** 窗口模式边缘缩放把手的拖拽方向（与 Tauri ResizeDirection 对齐） */
+export type ResizeDirection =
+  | "East"
+  | "North"
+  | "NorthEast"
+  | "NorthWest"
+  | "South"
+  | "SouthEast"
+  | "SouthWest"
+  | "West";
 
 export const api = {
   listTasks: () => invoke<Task[]>("list_tasks"),
@@ -56,4 +70,13 @@ export const api = {
   /** 设置全局热键（如 "Ctrl+Alt+KeyT"）；注册成功才落库并回显，失败 Err 且旧热键保持 */
   setGlobalHotkey: (hotkey: string) =>
     invoke<string>("set_global_hotkey", { hotkey }),
+  /** 切换运行模式（贴边↔窗口）：Rust 落库并就地变换窗口形态（含毛玻璃开关） */
+  setAppMode: (mode: AppMode) => invoke<AppMode>("set_app_mode", { mode }),
+  /** 切换窗口模式背景材质（毛玻璃↔普通透明）：Rust 落库并即时应用/撤销系统材质 */
+  setWindowMaterial: (material: WindowMaterial) =>
+    invoke<WindowMaterial>("set_window_material", { material }),
+  /** 窗口模式边缘缩放把手：从指定边/角进入系统缩放循环（无边框窗口的
+      原生缩放命中会被 WebView 子窗口挡住，只能这样触发） */
+  startResizeDragging: (direction: ResizeDirection) =>
+    getCurrentWindow().startResizeDragging(direction),
 };

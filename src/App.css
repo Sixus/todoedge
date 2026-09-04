@@ -63,6 +63,17 @@ button {
   scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
+/* 窗口模式：清单右缘留出 6px 缩放把手位，滚动条随之内移不再贴边 */
+.task-scroll-resize {
+  margin-right: 6px;
+}
+
+/* 窗口模式边缘缩放把手：无底色隐形，仅提供光标与按住缩放 */
+.resize-grip {
+  position: absolute;
+  z-index: 45;
+}
+
 .task-scroll::-webkit-scrollbar {
   width: 6px;
 }

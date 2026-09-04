@@ -99,3 +99,19 @@
   --strip-bg: #5a5a5a;
   --strip-opacity: 1;
 }
+
+/*
+ * 窗口模式（html[data-app-mode="window"]，设置里「运行模式=窗口」）：
+ * 背景是 Rust 侧 apply_blur 做的系统级毛玻璃（DWM 合成，非 CSS
+ * backdrop-filter），面板底色比贴边透明档更淡，让壁纸/后方窗口颜色透出。
+ * 只作用于玻璃材质：:not([data-material="solid"]) 保证实体档依旧不透明。
+ */
+:root[data-app-mode="window"]:not([data-material="solid"]) {
+  --bg: rgba(244, 244, 244, 0.5);
+  --surface-hover: rgba(255, 255, 255, 0.38);
+}
+
+:root[data-theme="dark"][data-app-mode="window"]:not([data-material="solid"]) {
+  --bg: rgba(32, 32, 32, 0.5);
+  --surface-hover: rgba(255, 255, 255, 0.08);
+}

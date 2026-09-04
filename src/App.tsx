@@ -7,6 +7,12 @@ import "./App.css";
 import { Panel } from "./components/Panel";
 import { Strip } from "./components/Strip";
 import { useTasks } from "./hooks/useTasks";
+import {
+  APP_MODE_SETTING_KEY,
+  applyAppMode,
+  normalizeAppMode,
+  type AppMode,
+} from "./lib/appMode";
 import { api, type WindowMode } from "./lib/api";
 import {
   ANIMATIONS_SETTING_KEY,
@@ -37,6 +43,8 @@ function App() {
   // 全局动画总开关（M4 反馈）：面板滑出/缩进、勾选完成、分组展开、新增任务、
   // 撤销提示全部受它控制；设置表持久化，同一开关同步给 Rust 侧窗口动画
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
+  // 运行模式（贴边/窗口）：窗口模式下面板常驻展开、标题栏可拖动窗口
+  const [appMode, setAppMode] = useState<AppMode>("edge");
   const isTransitioning = useRef(false);
 
   // 外观材质：启动读持久化值（设置视图与面板同文档，改动即时生效，无需跨窗口事件）
@@ -44,6 +52,18 @@ function App() {
     void api
       .getSetting(MATERIAL_SETTING_KEY)
       .then((value) => applyMaterial(normalizeMaterial(value)))
+      .catch(() => undefined);
+    // 运行模式：窗口模式启动时直接进面板（Rust 侧已按模式落位窗口与毛玻璃）
+    void api
+      .getSetting(APP_MODE_SETTING_KEY)
+      .then((value) => {
+        const mode = normalizeAppMode(value);
+        setAppMode(mode);
+        applyAppMode(mode);
+        if (mode === "window") {
+          setCollapsed(false);
+        }
+      })
       .catch(() => undefined);
     // 全局动画开关：启动恢复前端状态，并同步给 Rust 侧窗口动画逻辑
     void api
@@ -132,6 +152,14 @@ function App() {
     void api.setPanelAnimations(enabled).catch(() => undefined);
   }, []);
 
+  // 运行模式切换：落库交给 Rust（含毛玻璃/窗口形态变换），前端先更新
+  // data-app-mode 让面板底色立即过渡；展开/收起由 Rust 的 window-mode-changed 事件驱动
+  const changeAppMode = useCallback((mode: AppMode) => {
+    setAppMode(mode);
+    applyAppMode(mode);
+    void api.setAppMode(mode).catch(() => undefined);
+  }, []);
+
   // 全局禁掉网页默认右键菜单：WebView 菜单带刷新/检查/发送到设备等浏览器项，
   // 输入框里也一样，一律不弹；剪切/复制/粘贴走 Ctrl+X/C/V 快捷键
   useEffect(() => {
@@ -180,6 +208,8 @@ function App() {
   return (
     <Panel
       animationsEnabled={animationsEnabled}
+      appMode={appMode}
+      onChangeAppMode={changeAppMode}
       error={error}
       highlightTaskId={highlightTaskId}
       isLoading={isLoading}

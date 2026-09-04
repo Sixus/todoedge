@@ -4,6 +4,12 @@ import { getVersion } from "@tauri-apps/api/app";
 
 import { api } from "../lib/api";
 import {
+  WINDOW_MATERIAL_SETTING_KEY,
+  normalizeWindowMaterial,
+  type AppMode,
+  type WindowMaterial,
+} from "../lib/appMode";
+import {
   DEFAULT_HOTKEY,
   HOTKEY_SETTING_KEY,
   buildHotkeyCombo,
@@ -30,6 +36,9 @@ interface SettingsViewProps {
   animationsEnabled: boolean;
   /** 拨动动画开关：App 负责落库、同步 Rust 与更新前端状态 */
   onChangeAnimations: (enabled: boolean) => void;
+  /** 运行模式（贴边/窗口）：状态在 App 持有，切换走 Rust 落库 + 窗口形态变换 */
+  appMode: AppMode;
+  onChangeAppMode: (mode: AppMode) => void;
   onClose: () => void;
 }
 
@@ -45,9 +54,13 @@ function errorMessage(error: unknown): string {
 export function SettingsView({
   animationsEnabled,
   onChangeAnimations,
+  appMode,
+  onChangeAppMode,
   onClose,
 }: SettingsViewProps) {
   const [material, setMaterial] = useState<Material>("glass");
+  // 窗口模式背景材质（毛玻璃/普通透明），仅窗口模式下显示
+  const [windowMaterial, setWindowMaterial] = useState<WindowMaterial>("blur");
   const [theme, setTheme] = useState<ThemeMode>("auto");
   const [hotkey, setHotkey] = useState(DEFAULT_HOTKEY);
   const [recording, setRecording] = useState(false);
@@ -74,6 +87,9 @@ export function SettingsView({
         const savedMaterial = normalizeMaterial(await api.getSetting(MATERIAL_SETTING_KEY));
         setMaterial(savedMaterial);
         applyMaterial(savedMaterial);
+        setWindowMaterial(
+          normalizeWindowMaterial(await api.getSetting(WINDOW_MATERIAL_SETTING_KEY)),
+        );
         setTheme(normalizeTheme(await api.getSetting(THEME_SETTING_KEY)));
         const savedSnooze = await api.getSetting(SNOOZE_SETTING_KEY);
         if (savedSnooze !== null && savedSnooze !== "") {
@@ -92,6 +108,15 @@ export function SettingsView({
     setMaterial(next);
     applyMaterial(next);
     void api.setSetting(MATERIAL_SETTING_KEY, next).catch((cause) => {
+      setError(errorMessage(cause));
+    });
+  }, []);
+
+  // 窗口模式背景材质：Rust 落库并即时应用/撤销系统材质（普通透明用于
+  // 云电脑/远程会话等 DWM 不支持背景采样的环境）
+  const changeWindowMaterial = useCallback((next: WindowMaterial) => {
+    setWindowMaterial(next);
+    void api.setWindowMaterial(next).catch((cause) => {
       setError(errorMessage(cause));
     });
   }, []);
@@ -189,6 +214,68 @@ export function SettingsView({
         </button>
         <h1 className="settings-title">设置</h1>
       </header>
+
+      {/* 运行模式（最上方）：切换即生效；切到贴边后面板收成细条，本视图随面板卸载 */}
+      <div className="settings-row">
+        <div className="settings-text">
+          <p className="settings-label">运行模式</p>
+          <p className="settings-desc">
+            贴边=吸附屏幕右缘；窗口=普通窗口，毛玻璃背景可透出桌面
+          </p>
+        </div>
+        <div className="settings-segment" role="radiogroup" aria-label="运行模式">
+          <button
+            aria-checked={appMode === "edge"}
+            className={appMode === "edge" ? "active" : ""}
+            onClick={() => onChangeAppMode("edge")}
+            role="radio"
+            type="button"
+          >
+            贴边
+          </button>
+          <button
+            aria-checked={appMode === "window"}
+            className={appMode === "window" ? "active" : ""}
+            onClick={() => onChangeAppMode("window")}
+            role="radio"
+            type="button"
+          >
+            窗口
+          </button>
+        </div>
+      </div>
+
+      {/* 窗口模式背景材质：仅窗口模式下显示 */}
+      {appMode === "window" ? (
+        <div className="settings-row">
+          <div className="settings-text">
+            <p className="settings-label">窗口背景</p>
+            <p className="settings-desc">
+              系统毛玻璃=背景真模糊；云电脑/远程桌面不支持时选普通透明
+            </p>
+          </div>
+          <div className="settings-segment" role="radiogroup" aria-label="窗口背景">
+            <button
+              aria-checked={windowMaterial === "blur"}
+              className={windowMaterial === "blur" ? "active" : ""}
+              onClick={() => changeWindowMaterial("blur")}
+              role="radio"
+              type="button"
+            >
+              毛玻璃
+            </button>
+            <button
+              aria-checked={windowMaterial === "clear"}
+              className={windowMaterial === "clear" ? "active" : ""}
+              onClick={() => changeWindowMaterial("clear")}
+              role="radio"
+              type="button"
+            >
+              普通透明
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="settings-row">
         <div className="settings-text">

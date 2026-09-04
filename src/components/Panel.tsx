@@ -1,7 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import dayjs from "dayjs";
 
-import type { Task } from "../lib/api";
+import { api, type ResizeDirection, type Task } from "../lib/api";
+import type { AppMode } from "../lib/appMode";
 import { formatOverviewDate } from "../lib/format";
 import { CompletedIcon, PinIcon, SettingsIcon } from "./icons";
 import { ReportView } from "./ReportView";
@@ -15,6 +22,9 @@ interface PanelProps {
   error: string | null;
   /** 全局动画总开关：提示条与清单内动画据此启停（窗口滑出/缩进在 Rust 侧） */
   animationsEnabled: boolean;
+  /** 运行模式（贴边/窗口）：窗口模式下面板常驻展开，标题栏可拖动窗口 */
+  appMode: AppMode;
+  onChangeAppMode: (mode: AppMode) => void;
   /** 图钉固定：固定时屏蔽一切自动收起（移出/点外部/Esc/失焦），全屏强制收回除外 */
   pinned: boolean;
   onTogglePin: () => void;
@@ -40,6 +50,8 @@ export function Panel({
   isLoading,
   error,
   animationsEnabled,
+  appMode,
+  onChangeAppMode,
   pinned,
   onTogglePin,
   onChangeAnimations,
@@ -55,6 +67,24 @@ export function Panel({
   onHighlightEnd,
 }: PanelProps) {
   const panelRef = useRef<HTMLElement>(null);
+  // 窗口模式无边框：标题栏作为拖动区（data-tauri-drag-region 要落在
+  // 指针命中的确切元素上，所以 h1/p/span 也得带）
+  const windowDraggable = appMode === "window";
+  const dragRegionProps = windowDraggable
+    ? { "data-tauri-drag-region": "" }
+    : {};
+  // 窗口模式边缘缩放把手：无边框窗口的原生缩放命中会被 WebView 子窗口挡住，
+  // 按住把手触发系统缩放循环。把手只盖面板内边距/留白，不压任务行与按钮；
+  // 设置/周报覆盖层（z-50）在其上，覆盖层打开时把手自然失效。
+  const startResize = (direction: ResizeDirection) => (
+    event: ReactMouseEvent<HTMLDivElement>,
+  ) => {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    void api.startResizeDragging(direction).catch(() => undefined);
+  };
   const collapseTimer = useRef<number | null>(null);
   const isEditingRef = useRef(false);
   // 图钉最新值镜像：requestCollapse 会被首挂载的事件监听器/定时器闭包调用，
@@ -311,29 +341,40 @@ export function Panel({
         <SettingsView
           animationsEnabled={animationsEnabled}
           onChangeAnimations={onChangeAnimations}
+          appMode={appMode}
+          onChangeAppMode={onChangeAppMode}
           onClose={() => setShowSettings(false)}
         />
       ) : (
         <>
-          {/* ① 概览区 */}
-      <header className="flex items-baseline justify-between gap-2 pb-2 pl-5 pr-5 pt-4">
-        <h1 className="text-xl font-semibold leading-7">
+          {/* ① 概览区（窗口模式下即标题栏，可拖动窗口） */}
+      <header
+        className="flex items-baseline justify-between gap-2 pb-2 pl-5 pr-5 pt-4"
+        {...dragRegionProps}
+      >
+        <h1 className="text-xl font-semibold leading-7" {...dragRegionProps}>
           {formatOverviewDate(now)}
         </h1>
-        <p className="flex shrink-0 items-baseline text-xs leading-4">
+        <p
+          className="flex shrink-0 items-baseline text-xs leading-4"
+          {...dragRegionProps}
+        >
           <span
             className={
               overdueCount > 0
                 ? "font-semibold text-[color:var(--danger)]"
                 : "text-[color:var(--fg-muted)]"
             }
+            {...dragRegionProps}
           >
             过期 {overdueCount}
           </span>
-          <span aria-hidden className="px-1 text-[color:var(--fg-faint)]">
+          <span aria-hidden className="px-1 text-[color:var(--fg-faint)]" {...dragRegionProps}>
             ·
           </span>
-          <span className="text-[color:var(--fg-muted)]">今日 {todayCount}</span>
+          <span className="text-[color:var(--fg-muted)]" {...dragRegionProps}>
+            今日 {todayCount}
+          </span>
         </p>
       </header>
 
@@ -342,10 +383,12 @@ export function Panel({
         <TaskInput onAdd={onAdd} />
       </div>
 
-      {/* ③ 任务清单区 */}
+      {/* ③ 任务清单区（窗口模式右缘留出缩放把手位，滚动条随之内移） */}
       <section
         aria-label="任务清单"
-        className="task-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-2"
+        className={`task-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-2${
+          windowDraggable ? " task-scroll-resize" : ""
+        }`}
       >
         {isLoading ? (
           <p className="mt-10 text-center text-[13px] text-[color:var(--fg-muted)]">加载中…</p>
@@ -406,6 +449,47 @@ export function Panel({
       </footer>
         </>
       )}
+
+      {/* 窗口模式边缘缩放把手（z 在设置/周报覆盖层之下，覆盖层打开时不碍事） */}
+      {windowDraggable ? (
+        <>
+          <div
+            className="resize-grip"
+            style={{ bottom: 14, cursor: "ew-resize", left: 14, top: 14, width: 6 }}
+            onMouseDown={startResize("West")}
+          />
+          <div
+            className="resize-grip"
+            style={{ bottom: 14, cursor: "ew-resize", right: 14, top: 14, width: 6 }}
+            onMouseDown={startResize("East")}
+          />
+          <div
+            className="resize-grip"
+            style={{ bottom: 0, cursor: "ns-resize", height: 6, left: 14, right: 14 }}
+            onMouseDown={startResize("South")}
+          />
+          <div
+            className="resize-grip"
+            style={{ cursor: "nwse-resize", height: 14, left: 0, top: 0, width: 14 }}
+            onMouseDown={startResize("NorthWest")}
+          />
+          <div
+            className="resize-grip"
+            style={{ cursor: "nesw-resize", height: 14, right: 0, top: 0, width: 14 }}
+            onMouseDown={startResize("NorthEast")}
+          />
+          <div
+            className="resize-grip"
+            style={{ bottom: 0, cursor: "nesw-resize", height: 14, left: 0, width: 14 }}
+            onMouseDown={startResize("SouthWest")}
+          />
+          <div
+            className="resize-grip"
+            style={{ bottom: 0, cursor: "nwse-resize", height: 14, right: 0, width: 14 }}
+            onMouseDown={startResize("SouthEast")}
+          />
+        </>
+      ) : null}
 
       {/* 撤销 toast：浮在所有视图（含周报）之上；多条堆叠，新触发的在上。
           弹出自下而上滑入，消失渐隐；动画受全局开关控制 */}

@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
         Arc, Mutex,
     },
     time::Duration,
@@ -22,6 +22,99 @@ pub const STRIP_RATIO_SETTING_KEY: &str = "strip_center_ratio";
 /// 0.5 = 垂直居中（默认）
 pub const DEFAULT_STRIP_CENTER_RATIO: f64 = 0.5;
 
+/// settings 键：运行模式（"edge" 贴边 / "window" 窗口），设置页「运行模式」读写
+pub const APP_MODE_SETTING_KEY: &str = "app_mode";
+/// settings 键：窗口模式背景材质（"blur" 系统毛玻璃 / "clear" 普通透明）
+pub const WINDOW_MATERIAL_SETTING_KEY: &str = "window_material";
+
+/// 窗口模式背景材质。系统毛玻璃（DWM blur behind）在实体机上是真的背景模糊，
+/// 但部分虚拟显示器/云电脑/远程会话的 DWM 不支持背景采样，只会渲染纯色兜底
+/// （本项目 docs/01 第 7 节实测记录的现象），此时可切「普通透明」纯逐像素透色。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum WindowMaterial {
+    Blur,
+    Clear,
+}
+
+const MATERIAL_BLUR: u8 = 0;
+const MATERIAL_CLEAR: u8 = 1;
+
+impl WindowMaterial {
+    fn from_u8(value: u8) -> Self {
+        if value == MATERIAL_CLEAR {
+            WindowMaterial::Clear
+        } else {
+            WindowMaterial::Blur
+        }
+    }
+
+    fn as_u8(self) -> u8 {
+        match self {
+            WindowMaterial::Blur => MATERIAL_BLUR,
+            WindowMaterial::Clear => MATERIAL_CLEAR,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WindowMaterial::Blur => "blur",
+            WindowMaterial::Clear => "clear",
+        }
+    }
+
+    fn parse(text: &str) -> Result<Self, String> {
+        match text {
+            "blur" => Ok(WindowMaterial::Blur),
+            "clear" => Ok(WindowMaterial::Clear),
+            other => Err(format!("未知窗口背景材质：{other}")),
+        }
+    }
+}
+
+/// 应用级运行模式（设置里「运行模式」）：贴边（现状，吸附右缘细条）或窗口
+/// （普通可激活窗口 + 系统级毛玻璃背景）。与 WindowMode（面板展开/收起几何）
+/// 是两层概念：窗口模式下面板常驻展开，展开/收起命令一律不生效。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AppShellMode {
+    Edge,
+    Window,
+}
+
+const APP_MODE_EDGE: u8 = 0;
+const APP_MODE_WINDOW: u8 = 1;
+
+impl AppShellMode {
+    fn from_u8(value: u8) -> Self {
+        if value == APP_MODE_WINDOW {
+            AppShellMode::Window
+        } else {
+            AppShellMode::Edge
+        }
+    }
+
+    fn as_u8(self) -> u8 {
+        match self {
+            AppShellMode::Edge => APP_MODE_EDGE,
+            AppShellMode::Window => APP_MODE_WINDOW,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AppShellMode::Edge => "edge",
+            AppShellMode::Window => "window",
+        }
+    }
+
+    fn parse(text: &str) -> Result<Self, String> {
+        match text {
+            "edge" => Ok(AppShellMode::Edge),
+            "window" => Ok(AppShellMode::Window),
+            other => Err(format!("未知运行模式：{other}")),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum WindowMode {
@@ -42,6 +135,10 @@ pub struct WindowCtlState {
     strip_center_ratio: AtomicU64,
     /// 窗口几何变更代数：每次 set_mode 自增；动画线程逐帧核对，代数变了即中止
     generation: AtomicU64,
+    /// 运行模式（贴边/窗口）：启动从 settings 恢复，设置页切换时更新
+    app_mode: AtomicU8,
+    /// 窗口模式背景材质（毛玻璃/普通透明）：同上
+    window_material: AtomicU8,
 }
 
 impl Default for WindowCtlState {
@@ -55,6 +152,8 @@ impl Default for WindowCtlState {
             animations_enabled: AtomicBool::new(true),
             strip_center_ratio: AtomicU64::new(DEFAULT_STRIP_CENTER_RATIO.to_bits()),
             generation: AtomicU64::new(0),
+            app_mode: AtomicU8::new(APP_MODE_EDGE),
+            window_material: AtomicU8::new(MATERIAL_BLUR),
         }
     }
 }
@@ -78,6 +177,22 @@ impl WindowCtlState {
     pub fn set_strip_center_ratio(&self, ratio: f64) {
         self.strip_center_ratio
             .store(ratio.to_bits(), Ordering::Release);
+    }
+
+    pub fn app_mode(&self) -> AppShellMode {
+        AppShellMode::from_u8(self.app_mode.load(Ordering::Acquire))
+    }
+
+    pub fn set_app_mode_value(&self, mode: AppShellMode) {
+        self.app_mode.store(mode.as_u8(), Ordering::Release);
+    }
+
+    pub fn window_material(&self) -> WindowMaterial {
+        WindowMaterial::from_u8(self.window_material.load(Ordering::Acquire))
+    }
+
+    pub fn set_window_material_value(&self, material: WindowMaterial) {
+        self.window_material.store(material.as_u8(), Ordering::Release);
     }
 }
 
@@ -186,8 +301,11 @@ fn animate_to(
     });
 }
 
+/// 贴边模式的「不抢焦点 + 不进任务栏」窗口扩展样式开关。窗口模式必须把
+/// 这两个标志清掉——不可激活的窗口上系统级材质只会渲染纯色兜底（docs/01
+/// 第 7 节实测结论），毛玻璃要求窗口能正常激活。
 #[cfg(windows)]
-fn configure_native_window(window: &WebviewWindow) -> Result<(), String> {
+fn set_edge_assist_styles(window: &WebviewWindow, enable: bool) -> Result<(), String> {
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
     };
@@ -195,15 +313,136 @@ fn configure_native_window(window: &WebviewWindow) -> Result<(), String> {
     let hwnd = window.hwnd().map_err(|error| error.to_string())?;
     unsafe {
         let current_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        let style = current_style | (WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0) as isize;
+        let flags = (WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0) as isize;
+        let style = if enable {
+            current_style | flags
+        } else {
+            current_style & !flags
+        };
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style);
     }
     Ok(())
 }
 
 #[cfg(not(windows))]
-fn configure_native_window(_: &WebviewWindow) -> Result<(), String> {
+fn set_edge_assist_styles(_: &WebviewWindow, _: bool) -> Result<(), String> {
     Ok(())
+}
+
+/// 窗口模式的系统级毛玻璃：Windows 原生 blur behind（DWM 合成，微信 PC
+/// 侧边栏同款机制），透出桌面壁纸与后方窗口的颜色。只在窗口模式调用——
+/// 贴边主窗口永不激活，系统材质只会渲染纯色兜底。
+#[cfg(windows)]
+fn apply_glass_blur(window: &WebviewWindow) -> Result<(), String> {
+    window_vibrancy::apply_blur(window, None).map_err(|error| error.to_string())
+}
+
+#[cfg(not(windows))]
+fn apply_glass_blur(_: &WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
+
+/// SetWindowCompositionAttribute 未收录进 windows crate（window-vibrancy
+/// 内部同样自行声明链接）：attrib 0x13 = WCA_ACCENT_POLICY，
+/// accent_state 0 = ACCENT_DISABLED。
+#[cfg(windows)]
+#[repr(C)]
+struct AccentPolicy {
+    accent_state: u32,
+    accent_flags: u32,
+    gradient_color: u32,
+    animation_id: u32,
+}
+
+#[cfg(windows)]
+#[repr(C)]
+struct CompositionAttribData {
+    attrib: u32,
+    data: *mut std::ffi::c_void,
+    size: usize,
+}
+
+/// 切回贴边模式时移除毛玻璃。window-vibrancy 只提供应用不提供移除，
+/// 这里把系统合成属性设回 ACCENT_DISABLED，恢复普通逐像素透明窗口。
+/// SetWindowCompositionAttribute 不在 user32 导入库（window-vibrancy 内部
+/// 同样动态加载），运行时从 user32.dll 取函数指针：attrib 0x13 =
+/// WCA_ACCENT_POLICY，accent_state 0 = ACCENT_DISABLED。
+#[cfg(windows)]
+fn clear_glass_blur(window: &WebviewWindow) -> Result<(), String> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::System::LibraryLoader::{GetProcAddress, GetModuleHandleW};
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let user32 = unsafe { GetModuleHandleW(windows::core::w!("user32")) }
+        .map_err(|error| error.to_string())?;
+    type SetWindowCompositionAttributeFn =
+        unsafe extern "system" fn(HWND, *mut CompositionAttribData) -> windows::core::BOOL;
+    let proc_address = unsafe {
+        GetProcAddress(
+            user32,
+            windows::core::s!("SetWindowCompositionAttribute"),
+        )
+    };
+    let Some(proc_address) = proc_address else {
+        return Err("当前系统缺少 SetWindowCompositionAttribute".to_string());
+    };
+    let set_attribute: SetWindowCompositionAttributeFn =
+        unsafe { std::mem::transmute(proc_address) };
+
+    let mut accent = AccentPolicy {
+        accent_state: 0,
+        accent_flags: 0,
+        gradient_color: 0,
+        animation_id: 0,
+    };
+    let mut data = CompositionAttribData {
+        attrib: 0x13,
+        data: std::ptr::addr_of_mut!(accent).cast(),
+        size: std::mem::size_of::<AccentPolicy>(),
+    };
+    if unsafe { set_attribute(hwnd, &mut data) }.as_bool() {
+        Ok(())
+    } else {
+        Err("移除系统毛玻璃失败".to_string())
+    }
+}
+
+#[cfg(not(windows))]
+fn clear_glass_blur(_: &WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
+
+/// 窗口模式几何：与展开面板同尺寸，主屏居中落位（进入窗口模式/启动时）。
+fn window_mode_geometry(monitor: Monitor) -> WindowGeometry {
+    let scale_factor = monitor.scale_factor();
+    let monitor_size: LogicalSize<f64> = monitor.size().to_logical(scale_factor);
+    let monitor_position: LogicalPosition<f64> = monitor.position().to_logical(scale_factor);
+    let height = monitor_size.height * EXPANDED_HEIGHT_RATIO;
+    WindowGeometry {
+        size: LogicalSize::new(EXPANDED_WIDTH, height),
+        position: LogicalPosition::new(
+            monitor_position.x + (monitor_size.width - EXPANDED_WIDTH) / 2.0,
+            monitor_position.y + (monitor_size.height - height) / 2.0,
+        ),
+    }
+}
+
+/// 窗口模式的「呼出」：置前并聚焦（窗口模式可激活，不再用 SW_SHOWNOACTIVATE）。
+fn focus_window(window: &WebviewWindow) -> Result<(), String> {
+    window.show().map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())
+}
+
+/// 按当前材质设置应用窗口背景：毛玻璃 = DWM blur behind，普通透明 = 撤掉
+/// 系统材质恢复纯逐像素透色（云电脑等不支持 DWM 背景采样的环境用）。
+fn apply_window_material(
+    window: &WebviewWindow,
+    material: WindowMaterial,
+) -> Result<(), String> {
+    match material {
+        WindowMaterial::Blur => apply_glass_blur(window),
+        WindowMaterial::Clear => clear_glass_blur(window),
+    }
 }
 
 #[cfg(windows)]
@@ -255,17 +494,68 @@ fn set_mode(
     Ok(mode)
 }
 
-pub fn initialize(window: &WebviewWindow, state: &Arc<WindowCtlState>) -> Result<(), String> {
-    configure_native_window(window)?;
+/// 进入窗口模式（启动恢复或设置里从贴边切换）：普通窗口样式 + 主屏居中 +
+/// 系统毛玻璃，面板常驻展开。调用前应已把 app_mode 状态置为 Window。
+fn enter_window_mode(window: &WebviewWindow, state: &Arc<WindowCtlState>) -> Result<(), String> {
+    set_edge_assist_styles(window, false)?;
     window
-        .set_always_on_top(true)
+        .set_skip_taskbar(false)
         .map_err(|error| error.to_string())?;
-    set_mode(window, state, WindowMode::Collapsed, false)?;
-    show_without_activation(window)?;
-    Ok(())
+    window
+        .set_always_on_top(false)
+        .map_err(|error| error.to_string())?;
+    // 投影/系统描边必须关（用户反馈 2026-09-04）：系统阴影沿直角窗口边绘制，
+    // 会从 CSS 圆角外露出一圈边框，云电脑等 DWM 异常环境下尤其明显；
+    // 关掉后窗口观感与贴边模式一致，只有面板自己的 CSS 圆角边框。
+    window
+        .set_shadow(false)
+        .map_err(|error| error.to_string())?;
+    // 自由调整大小（用户反馈 2026-09-04）；默认尺寸仍由 window_mode_geometry 给出，
+    // 每次进入窗口模式都回到默认尺寸。最小尺寸防止缩成一团没法用。
+    window
+        .set_resizable(true)
+        .map_err(|error| error.to_string())?;
+    window
+        .set_min_size(Some(LogicalSize::new(280.0, 220.0)))
+        .map_err(|error| error.to_string())?;
+    let monitor = window
+        .primary_monitor()
+        .map_err(|error| error.to_string())?
+        .ok_or("未找到主显示器")?;
+    let geometry = window_mode_geometry(monitor);
+    window
+        .set_size(geometry.size)
+        .map_err(|error| error.to_string())?;
+    window
+        .set_position(geometry.position)
+        .map_err(|error| error.to_string())?;
+    *state.mode.lock().map_err(|_| "窗口状态已损坏")? = WindowMode::Expanded;
+    window
+        .emit("window-mode-changed", WindowMode::Expanded)
+        .map_err(|error| error.to_string())?;
+    apply_window_material(window, state.window_material())?;
+    focus_window(window)
+}
+
+pub fn initialize(window: &WebviewWindow, state: &Arc<WindowCtlState>) -> Result<(), String> {
+    match state.app_mode() {
+        AppShellMode::Window => enter_window_mode(window, state),
+        AppShellMode::Edge => {
+            set_edge_assist_styles(window, true)?;
+            window
+                .set_always_on_top(true)
+                .map_err(|error| error.to_string())?;
+            set_mode(window, state, WindowMode::Collapsed, false)?;
+            show_without_activation(window)
+        }
+    }
 }
 
 fn expand_inner(window: &WebviewWindow, state: &Arc<WindowCtlState>) -> Result<WindowMode, String> {
+    if state.app_mode() == AppShellMode::Window {
+        // 窗口模式：面板常驻展开，热键/通知的「呼出」只做置前聚焦
+        return focus_window(window).map(|()| WindowMode::Expanded);
+    }
     if state.is_fullscreen.load(Ordering::Acquire) {
         return set_mode(window, state, WindowMode::Collapsed, false);
     }
@@ -273,6 +563,10 @@ fn expand_inner(window: &WebviewWindow, state: &Arc<WindowCtlState>) -> Result<W
 }
 
 fn collapse_inner(window: &WebviewWindow, state: &Arc<WindowCtlState>) -> Result<WindowMode, String> {
+    if state.app_mode() == AppShellMode::Window {
+        // 窗口模式是普通窗口：移出/点外部/Esc/失焦等自动收起一律不生效
+        return Ok(WindowMode::Expanded);
+    }
     state.is_editing.store(false, Ordering::Release);
     set_mode(
         window,
@@ -298,11 +592,15 @@ pub fn collapse_panel(
     collapse_inner(&window, state.inner())
 }
 
-/// 全局热键切换（M3-3）：展开↔收起；全屏时 expand_inner 自会保持隐藏不弹
+/// 全局热键切换（M3-3）：展开↔收起；全屏时 expand_inner 自会保持隐藏不弹。
+/// 窗口模式下没有「收起」语义，热键一律当作呼出（置前聚焦）。
 pub fn toggle_panel(
     window: &WebviewWindow,
     state: &Arc<WindowCtlState>,
 ) -> Result<WindowMode, String> {
+    if state.app_mode() == AppShellMode::Window {
+        return expand_inner(window, state);
+    }
     if state.is_expanded() {
         collapse_inner(window, state)
     } else {
@@ -400,6 +698,101 @@ pub fn load_strip_center_ratio(db: &Db) -> f64 {
         .unwrap_or(DEFAULT_STRIP_CENTER_RATIO)
 }
 
+/// 启动时从 settings 恢复运行模式；缺失/损坏一律回贴边（现状行为）。
+pub fn load_app_mode(db: &Db) -> AppShellMode {
+    db.0.lock()
+        .map_err(|_| ())
+        .ok()
+        .and_then(|conn| db::setting_get(&conn, APP_MODE_SETTING_KEY).ok())
+        .flatten()
+        .and_then(|text| AppShellMode::parse(&text).ok())
+        .unwrap_or(AppShellMode::Edge)
+}
+
+/// 启动时从 settings 恢复窗口模式背景材质；缺失/损坏一律回系统毛玻璃。
+pub fn load_window_material(db: &Db) -> WindowMaterial {
+    db.0.lock()
+        .map_err(|_| ())
+        .ok()
+        .and_then(|conn| db::setting_get(&conn, WINDOW_MATERIAL_SETTING_KEY).ok())
+        .flatten()
+        .and_then(|text| WindowMaterial::parse(&text).ok())
+        .unwrap_or(WindowMaterial::Blur)
+}
+
+/// 设置里切换运行模式（贴边↔窗口）：先落库，再就地变换窗口形态。
+/// 窗口→贴边：先撤毛玻璃、恢复「不抢焦点」样式，再回右缘细条；
+/// 贴边→窗口：摘掉 NOACTIVATE 后窗口才能激活，激活态下毛玻璃才正常渲染。
+#[tauri::command]
+pub fn set_app_mode(
+    window: WebviewWindow,
+    db: State<'_, Db>,
+    state: State<'_, Arc<WindowCtlState>>,
+    mode: String,
+) -> Result<String, String> {
+    let shell_mode = AppShellMode::parse(&mode)?;
+    if state.app_mode() == shell_mode {
+        return Ok(shell_mode.as_str().to_string());
+    }
+
+    {
+        let conn = db.0.lock().map_err(|error| error.to_string())?;
+        db::setting_set(&conn, APP_MODE_SETTING_KEY, shell_mode.as_str())?;
+    }
+
+    match shell_mode {
+        AppShellMode::Window => {
+            // 先置状态再改窗口：改样式过程中若前端发来收起命令，门控立即生效
+            state.set_app_mode_value(AppShellMode::Window);
+            state.is_editing.store(false, Ordering::Release);
+            enter_window_mode(&window, state.inner())?;
+        }
+        AppShellMode::Edge => {
+            clear_glass_blur(&window)?;
+            state.set_app_mode_value(AppShellMode::Edge);
+            set_edge_assist_styles(&window, true)?;
+            window
+                .set_skip_taskbar(true)
+                .map_err(|error| error.to_string())?;
+            window
+                .set_always_on_top(true)
+                .map_err(|error| error.to_string())?;
+            window
+                .set_shadow(false)
+                .map_err(|error| error.to_string())?;
+            // 先撤最小尺寸再收细条：6px 宽远小于窗口模式的最小宽
+            window
+                .set_min_size::<LogicalSize<f64>>(None)
+                .map_err(|error| error.to_string())?;
+            window
+                .set_resizable(false)
+                .map_err(|error| error.to_string())?;
+            collapse_inner(&window, state.inner())?;
+        }
+    }
+    Ok(shell_mode.as_str().to_string())
+}
+
+/// 设置里切换窗口模式背景材质（毛玻璃↔普通透明）：落库并即时生效。
+#[tauri::command]
+pub fn set_window_material(
+    window: WebviewWindow,
+    db: State<'_, Db>,
+    state: State<'_, Arc<WindowCtlState>>,
+    material: String,
+) -> Result<String, String> {
+    let material = WindowMaterial::parse(&material)?;
+    {
+        let conn = db.0.lock().map_err(|error| error.to_string())?;
+        db::setting_set(&conn, WINDOW_MATERIAL_SETTING_KEY, material.as_str())?;
+    }
+    state.set_window_material_value(material);
+    if state.app_mode() == AppShellMode::Window {
+        apply_window_material(&window, material)?;
+    }
+    Ok(material.as_str().to_string())
+}
+
 #[cfg(windows)]
 fn is_fullscreen_application() -> bool {
     use windows::Win32::UI::Shell::{
@@ -466,14 +859,18 @@ pub fn start_fullscreen_monitor(window: WebviewWindow, state: Arc<WindowCtlState
         loop {
             tokio::select! {
                 _ = fullscreen_check.tick() => {
-                    let fullscreen = is_fullscreen_application();
-                    let was_fullscreen = state.is_fullscreen.swap(fullscreen, Ordering::AcqRel);
+                    // 窗口模式是普通窗口（已不置顶）：不跟随全屏应用隐藏，
+                    // 全屏程序自己会盖住它
+                    if state.app_mode() == AppShellMode::Edge {
+                        let fullscreen = is_fullscreen_application();
+                        let was_fullscreen = state.is_fullscreen.swap(fullscreen, Ordering::AcqRel);
 
-                    if fullscreen && !was_fullscreen {
-                        let _ = set_mode(&window, &state, WindowMode::Collapsed, false);
-                        let _ = window.hide();
-                    } else if !fullscreen && was_fullscreen {
-                        let _ = set_mode(&window, &state, WindowMode::Collapsed, true);
+                        if fullscreen && !was_fullscreen {
+                            let _ = set_mode(&window, &state, WindowMode::Collapsed, false);
+                            let _ = window.hide();
+                        } else if !fullscreen && was_fullscreen {
+                            let _ = set_mode(&window, &state, WindowMode::Collapsed, true);
+                        }
                     }
                 }
                 // 编辑态点外部收起的兜底：图钉固定时不轮询，固定语义优先

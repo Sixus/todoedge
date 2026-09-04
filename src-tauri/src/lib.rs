@@ -27,6 +27,10 @@ pub fn run() {
             // 细条垂直位置（比例）：窗口初始化前从 settings 恢复，首次落位即生效
             let window_state = window_ctl::WindowCtlState::default();
             window_state.set_strip_center_ratio(window_ctl::load_strip_center_ratio(&database));
+            // 运行模式（贴边/窗口）同样在窗口初始化前恢复，决定启动形态与毛玻璃
+            window_state.set_app_mode_value(window_ctl::load_app_mode(&database));
+            // 窗口模式背景材质（毛玻璃/普通透明）
+            window_state.set_window_material_value(window_ctl::load_window_material(&database));
             let window_state = Arc::new(window_state);
             app.manage(database);
 
@@ -68,6 +72,8 @@ pub fn run() {
             window_ctl::move_strip_window,
             window_ctl::persist_strip_position,
             window_ctl::reset_strip_position,
+            window_ctl::set_app_mode,
+            window_ctl::set_window_material,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
