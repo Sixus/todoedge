@@ -29,8 +29,13 @@ pub fn run() {
             window_state.set_strip_center_ratio(window_ctl::load_strip_center_ratio(&database));
             // 运行模式（贴边/窗口）同样在窗口初始化前恢复，决定启动形态与毛玻璃
             window_state.set_app_mode_value(window_ctl::load_app_mode(&database));
-            // 窗口模式背景材质（毛玻璃/普通透明）
+            // 窗口模式背景材质（亚克力/普通透明）
             window_state.set_window_material_value(window_ctl::load_window_material(&database));
+            // 图钉状态：窗口模式启动按此恢复置顶（贴边模式本就常驻置顶）
+            window_state.set_pinned(window_ctl::load_pinned(&database));
+            // 失焦自动上锁：开关与时长
+            let (auto_lock_enabled, auto_lock_minutes) = window_ctl::load_auto_lock(&database);
+            window_state.set_auto_lock(auto_lock_enabled, auto_lock_minutes);
             let window_state = Arc::new(window_state);
             app.manage(database);
 
@@ -41,6 +46,16 @@ pub fn run() {
             let main_window = app.get_webview_window("main").expect("未找到主窗口");
             window_ctl::initialize(&main_window, &window_state)
                 .unwrap_or_else(|e| panic!("窗口初始化失败：{e}"));
+            // 窗口焦点 → 隐私锁自动上锁计时（仅窗口模式；计时在 Rust 侧防 JS 节流）
+            {
+                let focus_window = main_window.clone();
+                let focus_state = window_state.clone();
+                main_window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::Focused(focused) = event {
+                        window_ctl::on_window_focus(&focus_window, &focus_state, *focused);
+                    }
+                });
+            }
             window_ctl::start_fullscreen_monitor(main_window, window_state.clone());
             app.manage(window_state);
 
@@ -74,6 +89,9 @@ pub fn run() {
             window_ctl::reset_strip_position,
             window_ctl::set_app_mode,
             window_ctl::set_window_material,
+            window_ctl::lock_panel,
+            window_ctl::set_auto_lock_enabled,
+            window_ctl::set_auto_lock_minutes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

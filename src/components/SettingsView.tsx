@@ -4,6 +4,8 @@ import { getVersion } from "@tauri-apps/api/app";
 
 import { api } from "../lib/api";
 import {
+  AUTO_LOCK_ENABLED_SETTING_KEY,
+  AUTO_LOCK_MINUTES_SETTING_KEY,
   WINDOW_MATERIAL_SETTING_KEY,
   applyWindowMaterial,
   normalizeWindowMaterial,
@@ -60,8 +62,11 @@ export function SettingsView({
   onClose,
 }: SettingsViewProps) {
   const [material, setMaterial] = useState<Material>("glass");
-  // 窗口模式背景材质（亚克力/毛玻璃/普通透明），仅窗口模式下显示
+  // 窗口模式背景材质（亚克力/普通透明），仅窗口模式下显示
   const [windowMaterial, setWindowMaterial] = useState<WindowMaterial>("acrylic");
+  // 失焦自动上锁：开关与时长分钟（仅窗口模式下显示）
+  const [autoLockEnabled, setAutoLockEnabled] = useState(true);
+  const [autoLockMinutes, setAutoLockMinutes] = useState("1");
   const [theme, setTheme] = useState<ThemeMode>("auto");
   const [hotkey, setHotkey] = useState(DEFAULT_HOTKEY);
   const [recording, setRecording] = useState(false);
@@ -90,6 +95,17 @@ export function SettingsView({
         applyMaterial(savedMaterial);
         setWindowMaterial(
           normalizeWindowMaterial(await api.getSetting(WINDOW_MATERIAL_SETTING_KEY)),
+        );
+        setAutoLockEnabled(
+          (await api.getSetting(AUTO_LOCK_ENABLED_SETTING_KEY)) !== "0",
+        );
+        const savedMinutes = await api.getSetting(AUTO_LOCK_MINUTES_SETTING_KEY);
+        setAutoLockMinutes(
+          savedMinutes !== null &&
+            Number.isInteger(Number(savedMinutes)) &&
+            Number(savedMinutes) >= 1
+            ? savedMinutes
+            : "1",
         );
         setTheme(normalizeTheme(await api.getSetting(THEME_SETTING_KEY)));
         const savedSnooze = await api.getSetting(SNOOZE_SETTING_KEY);
@@ -121,6 +137,24 @@ export function SettingsView({
     void api.setWindowMaterial(next).catch((cause) => {
       setError(errorMessage(cause));
     });
+  }, []);
+
+  // 失焦自动上锁：开关与时长（Rust 落库并驱动失焦计时）
+  const changeAutoLockEnabled = useCallback((enabled: boolean) => {
+    setAutoLockEnabled(enabled);
+    void api.setAutoLockEnabled(enabled).catch((cause) => {
+      setError(errorMessage(cause));
+    });
+  }, []);
+
+  const changeAutoLockMinutes = useCallback((value: string) => {
+    setAutoLockMinutes(value);
+    const minutes = Number(value);
+    if (Number.isInteger(minutes) && minutes >= 1 && minutes <= 1440) {
+      void api.setAutoLockMinutes(minutes).catch((cause) => {
+        setError(errorMessage(cause));
+      });
+    }
   }, []);
 
   // 深浅模式（auto/light/dark）：applyTheme 即时切换，auto 时由 lib/theme.ts 跟随系统
@@ -278,6 +312,51 @@ export function SettingsView({
             </button>
           </div>
         </div>
+      ) : null}
+
+      {/* 失焦自动上锁：仅窗口模式下显示 */}
+      {appMode === "window" ? (
+        <>
+          <div className="settings-row">
+            <div className="settings-text">
+              <p className="settings-label">失焦自动上锁</p>
+              <p className="settings-desc">
+                窗口失去焦点超过设定时长后遮住内容，点击锁屏恢复
+              </p>
+            </div>
+            <button
+              aria-checked={autoLockEnabled}
+              aria-label={`失焦自动上锁，当前${autoLockEnabled ? "开启" : "关闭"}`}
+              className="settings-switch"
+              onClick={() => changeAutoLockEnabled(!autoLockEnabled)}
+              role="switch"
+              type="button"
+            />
+          </div>
+          {autoLockEnabled ? (
+            <div className="settings-row">
+              <div className="settings-text">
+                <p className="settings-label">失焦多久上锁</p>
+                <p className="settings-desc">
+                  窗口持续失去焦点达到该时长后自动上锁（分钟）
+                </p>
+              </div>
+              <span className="flex shrink-0 items-center gap-1.5">
+                <input
+                  aria-label="失焦多久上锁（分钟）"
+                  className="settings-number"
+                  max="1440"
+                  min="1"
+                  onChange={(event) => changeAutoLockMinutes(event.target.value)}
+                  step="1"
+                  type="number"
+                  value={autoLockMinutes}
+                />
+                <span className="text-[12px] text-[color:var(--fg-muted)]">分钟</span>
+              </span>
+            </div>
+          ) : null}
+        </>
       ) : null}
 
       <div className="settings-row">

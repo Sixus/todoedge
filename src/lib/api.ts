@@ -72,9 +72,17 @@ export const api = {
     invoke<string>("set_global_hotkey", { hotkey }),
   /** 切换运行模式（贴边↔窗口）：Rust 落库并就地变换窗口形态（含毛玻璃开关） */
   setAppMode: (mode: AppMode) => invoke<AppMode>("set_app_mode", { mode }),
-  /** 切换窗口模式背景材质（毛玻璃↔普通透明）：Rust 落库并即时应用/撤销系统材质 */
+  /** 切换窗口模式背景材质（亚克力↔普通透明）：Rust 落库并即时应用/撤销系统材质 */
   setWindowMaterial: (material: WindowMaterial) =>
     invoke<WindowMaterial>("set_window_material", { material }),
+  /** 底栏锁头：立即上锁（Rust 广播 panel-lock 事件，面板锁屏统一处理） */
+  lockPanel: () => invoke<void>("lock_panel"),
+  /** 设置：失焦自动上锁开关 */
+  setAutoLockEnabled: (enabled: boolean) =>
+    invoke<void>("set_auto_lock_enabled", { enabled }),
+  /** 设置：失焦多久上锁（分钟，1–1440） */
+  setAutoLockMinutes: (minutes: number) =>
+    invoke<void>("set_auto_lock_minutes", { minutes }),
   /** 窗口模式边缘缩放把手：从指定边/角进入系统缩放循环（无边框窗口的
       原生缩放命中会被 WebView 子窗口挡住，只能这样触发） */
   startResizeDragging: (direction: ResizeDirection) =>

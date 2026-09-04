@@ -26,3 +26,7 @@ export function applyWindowMaterial(material: WindowMaterial): void {
 export function normalizeWindowMaterial(value: string | null): WindowMaterial {
   return value === "clear" ? "clear" : "acrylic";
 }
+
+/** settings 键：失焦自动上锁开关与时长分钟（Rust 侧有同名常量） */
+export const AUTO_LOCK_ENABLED_SETTING_KEY = "auto_lock_enabled";
+export const AUTO_LOCK_MINUTES_SETTING_KEY = "auto_lock_minutes";

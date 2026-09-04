@@ -134,3 +134,15 @@
   --bg: rgba(32, 32, 32, 0.35);
   --surface-hover: rgba(255, 255, 255, 0.08);
 }
+
+/*
+ * 隐私锁锁定画面底色：不透明的「界面失焦」灰，确保内容完全不可读；
+ * 跟随深浅模式。
+ */
+:root {
+  --lock-bg: #ececec;
+}
+
+:root[data-theme="dark"] {
+  --lock-bg: #2c2c2c;
+}

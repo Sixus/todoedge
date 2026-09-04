@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU8, AtomicU64, Ordering},
         Arc, Mutex,
     },
     time::Duration,
@@ -140,8 +140,13 @@ pub struct WindowCtlState {
     generation: AtomicU64,
     /// 运行模式（贴边/窗口）：启动从 settings 恢复，设置页切换时更新
     app_mode: AtomicU8,
-    /// 窗口模式背景材质（毛玻璃/普通透明）：同上
+    /// 窗口模式背景材质（亚克力/普通透明）：同上
     window_material: AtomicU8,
+    /// 失焦自动上锁开关（默认开）与时长分钟（默认 1，限 1..=1440）
+    auto_lock_enabled: AtomicBool,
+    auto_lock_minutes: AtomicU32,
+    /// 自动上锁计时代数：聚焦/改设置/手动上锁都会自增，作废挂起的计时线程
+    lock_generation: AtomicU64,
 }
 
 impl Default for WindowCtlState {
@@ -157,6 +162,9 @@ impl Default for WindowCtlState {
             generation: AtomicU64::new(0),
             app_mode: AtomicU8::new(APP_MODE_EDGE),
             window_material: AtomicU8::new(MATERIAL_ACRYLIC),
+            auto_lock_enabled: AtomicBool::new(true),
+            auto_lock_minutes: AtomicU32::new(1),
+            lock_generation: AtomicU64::new(0),
         }
     }
 }
@@ -196,6 +204,17 @@ impl WindowCtlState {
 
     pub fn set_window_material_value(&self, material: WindowMaterial) {
         self.window_material.store(material.as_u8(), Ordering::Release);
+    }
+
+    /// 图钉状态启动恢复（前端稍后会经 set_panel_pinned 再同步一次）
+    pub fn set_pinned(&self, pinned: bool) {
+        self.pinned.store(pinned, Ordering::Release);
+    }
+
+    /// 失焦自动上锁：开关与时长一起恢复
+    pub fn set_auto_lock(&self, enabled: bool, minutes: u32) {
+        self.auto_lock_enabled.store(enabled, Ordering::Release);
+        self.auto_lock_minutes.store(minutes, Ordering::Release);
     }
 }
 
@@ -494,8 +513,9 @@ fn enter_window_mode(window: &WebviewWindow, state: &Arc<WindowCtlState>) -> Res
         .set_skip_taskbar(false)
         .map_err(|error| error.to_string())?;
     window
-        .set_always_on_top(false)
+        .set_always_on_top(state.pinned.load(Ordering::Acquire))
         .map_err(|error| error.to_string())?;
+    // 图钉（共享状态）在窗口模式下即「置顶」：钉住则启动/切换即置顶。
     // 投影/系统描边必须关（用户反馈 2026-09-04）：系统阴影沿直角窗口边绘制，
     // 会从 CSS 圆角外露出一圈边框，云电脑等 DWM 异常环境下尤其明显；
     // 关掉后窗口观感与贴边模式一致，只有面板自己的 CSS 圆角边框。
@@ -608,10 +628,19 @@ pub fn set_panel_editing(editing: bool, state: State<'_, Arc<WindowCtlState>>) {
     }
 }
 
-/// 图钉开关变化时由前端同步过来：轮询兜底收起据此放行或拦截
+/// 图钉状态同步（前端底栏按钮 / 启动恢复）：贴边=防自动收起（轮询兜底收起
+/// 据此放行或拦截）；窗口=置顶开关。
 #[tauri::command]
-pub fn set_panel_pinned(pinned: bool, state: State<'_, Arc<WindowCtlState>>) {
+pub fn set_panel_pinned(
+    window: WebviewWindow,
+    state: State<'_, Arc<WindowCtlState>>,
+    pinned: bool,
+) {
     state.pinned.store(pinned, Ordering::Release);
+    // 窗口模式：图钉即置顶；贴边模式窗口原生常驻置顶，无需处理
+    if state.app_mode() == AppShellMode::Window {
+        let _ = window.set_always_on_top(pinned);
+    }
 }
 
 /// 拖动细条（M3-4）：前端把指针位移增量（逻辑像素）发过来，换算成比例更新
@@ -721,6 +750,114 @@ pub fn load_window_material(db: &Db) -> WindowMaterial {
     stored
         .and_then(|text| WindowMaterial::parse(&text).ok())
         .unwrap_or(WindowMaterial::Acrylic)
+}
+
+/// settings 键：图钉状态（与前端共用）：贴边=防自动收起；窗口=置顶。
+const PINNED_SETTING_KEY: &str = "pinned";
+
+/// 启动时恢复图钉状态；窗口模式的置顶在 initialize 时据此恢复。
+pub fn load_pinned(db: &Db) -> bool {
+    db.0.lock()
+        .map_err(|_| ())
+        .ok()
+        .and_then(|conn| db::setting_get(&conn, PINNED_SETTING_KEY).ok())
+        .flatten()
+        .map(|text| text == "1")
+        .unwrap_or(false)
+}
+
+/// settings 键：失焦自动上锁开关（"1"/"0"，默认开）与时长分钟（默认 1）。
+pub const AUTO_LOCK_ENABLED_SETTING_KEY: &str = "auto_lock_enabled";
+pub const AUTO_LOCK_MINUTES_SETTING_KEY: &str = "auto_lock_minutes";
+
+/// 启动时恢复失焦自动上锁：开关默认开，时长默认 1 分钟（限 1..=1440）。
+pub fn load_auto_lock(db: &Db) -> (bool, u32) {
+    let Ok(conn) = db.0.lock() else {
+        return (true, 1);
+    };
+    let enabled = db::setting_get(&conn, AUTO_LOCK_ENABLED_SETTING_KEY)
+        .ok()
+        .flatten()
+        .map(|text| text != "0")
+        .unwrap_or(true);
+    let minutes = db::setting_get(&conn, AUTO_LOCK_MINUTES_SETTING_KEY)
+        .ok()
+        .flatten()
+        .and_then(|text| text.parse::<u32>().ok())
+        .map(|minutes| minutes.clamp(1, 1440))
+        .unwrap_or(1);
+    (enabled, minutes)
+}
+
+/// 窗口模式隐私锁：失焦后持续满设定分钟仍未回归 → 通知前端上锁。
+/// 计时放在 Rust 侧——WebView2 失焦后 JS 定时器会被节流，不可靠。
+/// 聚焦、改设置、手动上锁都会自增代数作废挂起的计时；仅窗口模式生效
+/// （贴边窗口永不激活，无焦点概念）。
+pub fn on_window_focus(window: &WebviewWindow, state: &Arc<WindowCtlState>, focused: bool) {
+    if state.app_mode() != AppShellMode::Window {
+        return;
+    }
+    state.lock_generation.fetch_add(1, Ordering::AcqRel);
+    if focused || !state.auto_lock_enabled.load(Ordering::Acquire) {
+        return;
+    }
+    let minutes = u64::from(state.auto_lock_minutes.load(Ordering::Acquire).max(1));
+    let generation = state.lock_generation.load(Ordering::Acquire);
+    let window = window.clone();
+    let state = state.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(minutes * 60));
+        if state.lock_generation.load(Ordering::Acquire) != generation
+            || state.app_mode() != AppShellMode::Window
+        {
+            return;
+        }
+        let _ = window.emit("panel-lock", ());
+    });
+}
+
+/// 底栏锁头按钮：立即上锁（通知前端显示锁屏）；挂起的自动计时一并作废。
+#[tauri::command]
+pub fn lock_panel(window: WebviewWindow, state: State<'_, Arc<WindowCtlState>>) {
+    state.lock_generation.fetch_add(1, Ordering::AcqRel);
+    let _ = window.emit("panel-lock", ());
+}
+
+/// 设置：失焦自动上锁开关（落库 + 同步内存 + 作废挂起计时）。
+#[tauri::command]
+pub fn set_auto_lock_enabled(
+    db: State<'_, Db>,
+    state: State<'_, Arc<WindowCtlState>>,
+    enabled: bool,
+) -> Result<(), String> {
+    {
+        let conn = db.0.lock().map_err(|error| error.to_string())?;
+        db::setting_set(
+            &conn,
+            AUTO_LOCK_ENABLED_SETTING_KEY,
+            if enabled { "1" } else { "0" },
+        )?;
+    }
+    state.auto_lock_enabled.store(enabled, Ordering::Release);
+    state.lock_generation.fetch_add(1, Ordering::AcqRel);
+    Ok(())
+}
+
+/// 设置：失焦多久上锁（分钟，1..=1440；落库 + 同步内存 + 作废挂起计时）。
+#[tauri::command]
+pub fn set_auto_lock_minutes(
+    db: State<'_, Db>,
+    state: State<'_, Arc<WindowCtlState>>,
+    minutes: u32,
+) -> Result<(), String> {
+    let minutes = minutes.clamp(1, 1440);
+    {
+        let conn = db.0.lock().map_err(|error| error.to_string())?;
+        db::setting_set(&conn, AUTO_LOCK_MINUTES_SETTING_KEY, &minutes.to_string())?;
+    }
+    state.auto_lock_minutes.store(minutes, Ordering::Release);
+    state.lock_generation.fetch_add(1, Ordering::AcqRel);
+    Ok(())
 }
 
 /// 设置里切换运行模式（贴边↔窗口）：先落库，再就地变换窗口形态。

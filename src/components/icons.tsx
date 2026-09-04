@@ -115,3 +115,13 @@ export function ChevronIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+/** 🔒 隐私锁：底栏立即上锁入口 + 锁定画面中央大锁（放大使用） */
+export function LockIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <rect height="11" rx="2" width="18" x="3" y="10" />
+      <path d="M7.5 10V7a4.5 4.5 0 0 1 9 0v3" />
+    </svg>
+  );
+}

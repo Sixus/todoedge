@@ -4,13 +4,16 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import dayjs from "dayjs";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { api, type ResizeDirection, type Task } from "../lib/api";
 import type { AppMode } from "../lib/appMode";
 import { formatOverviewDate } from "../lib/format";
-import { CompletedIcon, PinIcon, SettingsIcon } from "./icons";
+import { CompletedIcon, LockIcon, PinIcon, SettingsIcon } from "./icons";
 import { ReportView } from "./ReportView";
 import { SettingsView } from "./SettingsView";
 import { TaskInput } from "./TaskInput";
@@ -85,6 +88,35 @@ export function Panel({
     event.preventDefault();
     void api.startResizeDragging(direction).catch(() => undefined);
   };
+
+  // 锁屏覆盖层：原地松手=解锁；按住拖出阈值=挪窗口（复用系统拖动循环）。
+  // 拖动开始后指针被系统拖动循环接管，不会误触解锁。
+  function beginLockPointer(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    lockPointer.current = { x: event.clientX, y: event.clientY, dragging: false };
+  }
+
+  function moveLockPointer(event: ReactPointerEvent<HTMLDivElement>) {
+    const start = lockPointer.current;
+    if (!start || start.dragging) {
+      return;
+    }
+    if (Math.abs(event.clientX - start.x) + Math.abs(event.clientY - start.y) > 6) {
+      start.dragging = true;
+      void getCurrentWindow().startDragging().catch(() => undefined);
+    }
+  }
+
+  function endLockPointer() {
+    const start = lockPointer.current;
+    lockPointer.current = null;
+    if (start && !start.dragging) {
+      setLocked(false);
+    }
+  }
   const collapseTimer = useRef<number | null>(null);
   const isEditingRef = useRef(false);
   // 图钉最新值镜像：requestCollapse 会被首挂载的事件监听器/定时器闭包调用，
@@ -104,6 +136,11 @@ export function Panel({
   const nextUndoToastId = useRef(0);
   // 正在播渐隐退场动画的提示条：动画结束后才真正移除（关动画时直接移除）
   const [closingToastIds, setClosingToastIds] = useState<number[]>([]);
+  // 隐私锁：锁定后覆盖层盖住全部内容，点击锁屏解锁（严格模式：激活不解锁）
+  const [locked, setLocked] = useState(false);
+  const lockPointer = useRef<{ x: number; y: number; dragging: boolean } | null>(
+    null,
+  );
 
   // 图钉激活时清掉已排队的自动收起，并同步镜像供各事件闭包读取
   useEffect(() => {
@@ -176,6 +213,14 @@ export function Panel({
         window.clearTimeout(timer);
       }
       timers.clear();
+    };
+  }, []);
+
+  // 隐私锁：Rust 失焦计时到点 / 底栏锁头按钮 → 上锁；点击锁屏解锁（严格模式）
+  useEffect(() => {
+    const unlisten = listen("panel-lock", () => setLocked(true));
+    return () => {
+      void unlisten.then((dispose) => dispose());
     };
   }, []);
 
@@ -427,15 +472,42 @@ export function Panel({
             <CompletedIcon className="h-[18px] w-[18px]" />
           </button>
           <button
-            aria-label={pinned ? "取消固定面板" : "固定面板"}
+            aria-label={
+              pinned
+                ? appMode === "window"
+                  ? "取消窗口置顶"
+                  : "取消固定面板"
+                : appMode === "window"
+                  ? "窗口置顶"
+                  : "固定面板"
+            }
             aria-pressed={pinned}
             className={`icon-btn ${pinned ? "pin-active" : ""}`}
             onClick={onTogglePin}
-            title={pinned ? "取消固定" : "固定面板（不自动收回）"}
+            title={
+              pinned
+                ? appMode === "window"
+                  ? "取消置顶"
+                  : "取消固定"
+                : appMode === "window"
+                  ? "窗口置顶（悬浮在最前）"
+                  : "固定面板（不自动收回）"
+            }
             type="button"
           >
             <PinIcon className="h-[18px] w-[18px]" />
           </button>
+          {appMode === "window" ? (
+            <button
+              aria-label="立即锁定"
+              className="icon-btn"
+              onClick={() => void api.lockPanel().catch(() => undefined)}
+              title="立即锁定"
+              type="button"
+            >
+              <LockIcon className="h-[18px] w-[18px]" />
+            </button>
+          ) : null}
           <button
             aria-label="设置"
             className="icon-btn"
@@ -489,6 +561,22 @@ export function Panel({
             onMouseDown={startResize("SouthEast")}
           />
         </>
+      ) : null}
+
+      {/* 隐私锁覆盖层：盖住全部内容与交互（含底栏/把手/弹层）；原地点击解锁，
+          按住拖动挪窗口。严格解锁——窗口重新激活不解锁，必须点一下锁屏 */}
+      {locked ? (
+        <div
+          aria-label="已锁定，点击显示 Todo 内容"
+          className="lock-overlay"
+          onPointerCancel={endLockPointer}
+          onPointerDown={beginLockPointer}
+          onPointerMove={moveLockPointer}
+          onPointerUp={endLockPointer}
+        >
+          <LockIcon className="lock-overlay-icon" />
+          <p className="lock-overlay-text">点击显示 Todo 内容</p>
+        </div>
       ) : null}
 
       {/* 撤销 toast：浮在所有视图（含周报）之上；多条堆叠，新触发的在上。

@@ -74,6 +74,34 @@ button {
   z-index: 45;
 }
 
+/* 隐私锁：锁定覆盖层（不透明遮住全部内容与交互；兼作拖动区）。
+   原地点击=解锁，按住拖动=挪窗口（见 Panel 的指针处理） */
+.lock-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--lock-bg);
+  color: var(--fg-muted);
+  user-select: none;
+  cursor: pointer;
+}
+
+.lock-overlay-icon {
+  width: 44px;
+  height: 44px;
+  stroke-width: 1.5;
+}
+
+.lock-overlay-text {
+  margin: 0;
+  font-size: 12px;
+}
+
 .task-scroll::-webkit-scrollbar {
   width: 6px;
 }
