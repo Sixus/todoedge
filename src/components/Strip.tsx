@@ -9,14 +9,16 @@ import { api } from "../lib/api";
 
 interface StripProps {
   onExpand: () => void;
+  /** 悬停多久后滑出（毫秒）：设置页「滑出延时」，默认 400 */
+  hoverExpandMs: number;
 }
 
 /**
- * 收起态细条：悬停 400ms 展开；按住可上下拖动调整垂直位置（M3-4）。
+ * 收起态细条：悬停延时（可设置）后展开；按住可上下拖动调整垂直位置（M3-4）。
  * 窗口带 WS_EX_NOACTIVATE 收不到系统拖动消息，拖动用 pointer capture 手动
  * 跟踪：位移增量经 rAF 合帧后 invoke 给 Rust 移动窗口，松手才落库。
  */
-export function Strip({ onExpand }: StripProps) {
+export function Strip({ hoverExpandMs, onExpand }: StripProps) {
   const hoverTimer = useRef<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{
@@ -42,7 +44,7 @@ export function Strip({ onExpand }: StripProps) {
     hoverTimer.current = window.setTimeout(() => {
       hoverTimer.current = null;
       onExpand();
-    }, 400);
+    }, hoverExpandMs);
   }
 
   function handleMouseLeave() {

@@ -33,6 +33,13 @@ import {
   THEME_SETTING_KEY,
   type ThemeMode,
 } from "../lib/theme";
+import {
+  clampDelayMs,
+  MAX_HOVER_EXPAND_MS,
+  MAX_LEAVE_COLLAPSE_MS,
+  MIN_HOVER_EXPAND_MS,
+  MIN_LEAVE_COLLAPSE_MS,
+} from "../lib/timing";
 
 interface SettingsViewProps {
   /** 全局动画总开关当前值（状态在 App 持有，清单/提示条动画共用） */
@@ -42,6 +49,11 @@ interface SettingsViewProps {
   /** 运行模式（贴边/窗口）：状态在 App 持有，切换走 Rust 落库 + 窗口形态变换 */
   appMode: AppMode;
   onChangeAppMode: (mode: AppMode) => void;
+  /** 贴边时机（毫秒）：当前值在 App 持有，改动经回调落库并即时生效 */
+  hoverExpandMs: number;
+  leaveCollapseMs: number;
+  onChangeHoverExpand: (ms: number) => void;
+  onChangeLeaveCollapse: (ms: number) => void;
   onClose: () => void;
 }
 
@@ -58,6 +70,10 @@ export function SettingsView({
   animationsEnabled,
   onChangeAnimations,
   appMode,
+  hoverExpandMs,
+  leaveCollapseMs,
+  onChangeHoverExpand,
+  onChangeLeaveCollapse,
   onChangeAppMode,
   onClose,
 }: SettingsViewProps) {
@@ -67,6 +83,14 @@ export function SettingsView({
   // 失焦自动上锁：开关与时长分钟（仅窗口模式下显示）
   const [autoLockEnabled, setAutoLockEnabled] = useState(true);
   const [autoLockMinutes, setAutoLockMinutes] = useState("1");
+  // 贴边时机输入框（仅贴边模式下显示）：字符串中转方便打字，
+  // 合法即存；失焦把越界/非法值钳回边界或回退当前生效值
+  const [hoverExpandInput, setHoverExpandInput] = useState(() =>
+    String(hoverExpandMs),
+  );
+  const [leaveCollapseInput, setLeaveCollapseInput] = useState(() =>
+    String(leaveCollapseMs),
+  );
   const [theme, setTheme] = useState<ThemeMode>("auto");
   const [hotkey, setHotkey] = useState(DEFAULT_HOTKEY);
   const [recording, setRecording] = useState(false);
@@ -156,6 +180,68 @@ export function SettingsView({
       });
     }
   }, []);
+
+  // 贴边时机：输入中合法即存（走 App 落库并更新 Strip/Panel 定时器）；
+  // 失焦时把越界值钳回边界、非法值回退当前生效值，输入框与实际生效保持一致
+  const changeHoverExpandInput = useCallback(
+    (value: string) => {
+      setHoverExpandInput(value);
+      const parsed = Number(value);
+      if (
+        Number.isInteger(parsed) &&
+        parsed >= MIN_HOVER_EXPAND_MS &&
+        parsed <= MAX_HOVER_EXPAND_MS
+      ) {
+        onChangeHoverExpand(parsed);
+      }
+    },
+    [onChangeHoverExpand],
+  );
+
+  const commitHoverExpandInput = useCallback(() => {
+    const parsed = Number(hoverExpandInput);
+    if (!Number.isInteger(parsed)) {
+      setHoverExpandInput(String(hoverExpandMs));
+      return;
+    }
+    const clamped = clampDelayMs(parsed, MIN_HOVER_EXPAND_MS, MAX_HOVER_EXPAND_MS);
+    setHoverExpandInput(String(clamped));
+    if (clamped !== hoverExpandMs) {
+      onChangeHoverExpand(clamped);
+    }
+  }, [hoverExpandInput, hoverExpandMs, onChangeHoverExpand]);
+
+  const changeLeaveCollapseInput = useCallback(
+    (value: string) => {
+      setLeaveCollapseInput(value);
+      const parsed = Number(value);
+      if (
+        Number.isInteger(parsed) &&
+        parsed >= MIN_LEAVE_COLLAPSE_MS &&
+        parsed <= MAX_LEAVE_COLLAPSE_MS
+      ) {
+        onChangeLeaveCollapse(parsed);
+      }
+    },
+    [onChangeLeaveCollapse],
+  );
+
+  const commitLeaveCollapseInput = useCallback(() => {
+    const parsed = Number(leaveCollapseInput);
+    if (!Number.isInteger(parsed)) {
+      setLeaveCollapseInput(String(leaveCollapseMs));
+      return;
+    }
+    const clamped = clampDelayMs(
+      parsed,
+      MIN_LEAVE_COLLAPSE_MS,
+      MAX_LEAVE_COLLAPSE_MS,
+    );
+    setLeaveCollapseInput(String(clamped));
+    if (clamped !== leaveCollapseMs) {
+      onChangeLeaveCollapse(clamped);
+    }
+  }, [leaveCollapseInput, leaveCollapseMs, onChangeLeaveCollapse]);
 
   // 深浅模式（auto/light/dark）：applyTheme 即时切换，auto 时由 lib/theme.ts 跟随系统
   const changeTheme = useCallback((next: ThemeMode) => {
@@ -280,6 +366,58 @@ export function SettingsView({
           </button>
         </div>
       </div>
+
+      {/* 贴边时机：仅贴边模式下显示（窗口模式面板常驻展开，无滑出/收回） */}
+      {appMode === "edge" ? (
+        <>
+          <div className="settings-row">
+            <div className="settings-text">
+              <p className="settings-label">滑出延时</p>
+              <p className="settings-desc">
+                鼠标停在右缘细条上多久后滑出面板（毫秒）
+              </p>
+            </div>
+            <span className="flex shrink-0 items-center gap-1.5">
+              <input
+                aria-label="滑出延时（毫秒）"
+                className="settings-number"
+                max={MAX_HOVER_EXPAND_MS}
+                min={MIN_HOVER_EXPAND_MS}
+                onBlur={commitHoverExpandInput}
+                onChange={(event) => changeHoverExpandInput(event.target.value)}
+                step="100"
+                type="number"
+                value={hoverExpandInput}
+              />
+              <span className="text-[12px] text-[color:var(--fg-muted)]">毫秒</span>
+            </span>
+          </div>
+          <div className="settings-row">
+            <div className="settings-text">
+              <p className="settings-label">收回延时</p>
+              <p className="settings-desc">
+                鼠标离开面板多久后自动滑回；点面板外/Esc 仍立即收起（毫秒）
+              </p>
+            </div>
+            <span className="flex shrink-0 items-center gap-1.5">
+              <input
+                aria-label="收回延时（毫秒）"
+                className="settings-number"
+                max={MAX_LEAVE_COLLAPSE_MS}
+                min={MIN_LEAVE_COLLAPSE_MS}
+                onBlur={commitLeaveCollapseInput}
+                onChange={(event) =>
+                  changeLeaveCollapseInput(event.target.value)
+                }
+                step="100"
+                type="number"
+                value={leaveCollapseInput}
+              />
+              <span className="text-[12px] text-[color:var(--fg-muted)]">毫秒</span>
+            </span>
+          </div>
+        </>
+      ) : null}
 
       {/* 窗口模式背景材质：仅窗口模式下显示 */}
       {appMode === "window" ? (

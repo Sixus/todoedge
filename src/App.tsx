@@ -24,6 +24,17 @@ import {
   normalizeMaterial,
 } from "./lib/material";
 import { applyTheme, normalizeTheme, THEME_SETTING_KEY } from "./lib/theme";
+import {
+  DEFAULT_HOVER_EXPAND_MS,
+  DEFAULT_LEAVE_COLLAPSE_MS,
+  HOVER_EXPAND_DELAY_SETTING_KEY,
+  LEAVE_COLLAPSE_DELAY_SETTING_KEY,
+  MAX_HOVER_EXPAND_MS,
+  MAX_LEAVE_COLLAPSE_MS,
+  MIN_HOVER_EXPAND_MS,
+  MIN_LEAVE_COLLAPSE_MS,
+  normalizeDelayMs,
+} from "./lib/timing";
 
 const PINNED_SETTING_KEY = "pinned";
 
@@ -48,6 +59,12 @@ function App() {
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
   // 运行模式（贴边/窗口）：窗口模式下面板常驻展开、标题栏可拖动窗口
   const [appMode, setAppMode] = useState<AppMode>("edge");
+  // 贴边时机：悬停细条多久滑出 / 鼠标离开面板多久收回（设置页可调，
+  // Strip/Panel 的定时器使用；仅贴边模式有意义）
+  const [hoverExpandMs, setHoverExpandMs] = useState(DEFAULT_HOVER_EXPAND_MS);
+  const [leaveCollapseMs, setLeaveCollapseMs] = useState(
+    DEFAULT_LEAVE_COLLAPSE_MS,
+  );
   const isTransitioning = useRef(false);
 
   // 外观材质：启动读持久化值（设置视图与面板同文档，改动即时生效，无需跨窗口事件）
@@ -95,6 +112,33 @@ function App() {
     void api
       .getSetting(THEME_SETTING_KEY)
       .then((value) => applyTheme(normalizeTheme(value)))
+      .catch(() => undefined);
+    // 贴边时机：启动恢复，缺失/损坏回默认值（设置页改动经 change* 回流到这里）
+    void api
+      .getSetting(HOVER_EXPAND_DELAY_SETTING_KEY)
+      .then((value) =>
+        setHoverExpandMs(
+          normalizeDelayMs(
+            value,
+            DEFAULT_HOVER_EXPAND_MS,
+            MIN_HOVER_EXPAND_MS,
+            MAX_HOVER_EXPAND_MS,
+          ),
+        ),
+      )
+      .catch(() => undefined);
+    void api
+      .getSetting(LEAVE_COLLAPSE_DELAY_SETTING_KEY)
+      .then((value) =>
+        setLeaveCollapseMs(
+          normalizeDelayMs(
+            value,
+            DEFAULT_LEAVE_COLLAPSE_MS,
+            MIN_LEAVE_COLLAPSE_MS,
+            MAX_LEAVE_COLLAPSE_MS,
+          ),
+        ),
+      )
       .catch(() => undefined);
   }, []);
 
@@ -160,6 +204,21 @@ function App() {
     void api.setPanelAnimations(enabled).catch(() => undefined);
   }, []);
 
+  // 贴边时机改动（设置页）：落库 + 更新前端状态，下一次悬停/离开即用新值
+  const changeHoverExpand = useCallback((ms: number) => {
+    setHoverExpandMs(ms);
+    void api
+      .setSetting(HOVER_EXPAND_DELAY_SETTING_KEY, String(ms))
+      .catch(() => undefined);
+  }, []);
+
+  const changeLeaveCollapse = useCallback((ms: number) => {
+    setLeaveCollapseMs(ms);
+    void api
+      .setSetting(LEAVE_COLLAPSE_DELAY_SETTING_KEY, String(ms))
+      .catch(() => undefined);
+  }, []);
+
   // 运行模式切换：落库交给 Rust（含毛玻璃/窗口形态变换），前端先更新
   // data-app-mode 让面板底色立即过渡；展开/收起由 Rust 的 window-mode-changed 事件驱动
   const changeAppMode = useCallback((mode: AppMode) => {
@@ -210,14 +269,18 @@ function App() {
   }, [expandPanel, reload]);
 
   if (collapsed) {
-    return <Strip onExpand={() => void expandPanel()} />;
+    return <Strip hoverExpandMs={hoverExpandMs} onExpand={() => void expandPanel()} />;
   }
 
   return (
     <Panel
       animationsEnabled={animationsEnabled}
       appMode={appMode}
+      hoverExpandMs={hoverExpandMs}
+      leaveCollapseMs={leaveCollapseMs}
       onChangeAppMode={changeAppMode}
+      onChangeHoverExpand={changeHoverExpand}
+      onChangeLeaveCollapse={changeLeaveCollapse}
       error={error}
       highlightTaskId={highlightTaskId}
       isLoading={isLoading}

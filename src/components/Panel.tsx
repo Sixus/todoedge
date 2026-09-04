@@ -28,6 +28,11 @@ interface PanelProps {
   /** 运行模式（贴边/窗口）：窗口模式下面板常驻展开，标题栏可拖动窗口 */
   appMode: AppMode;
   onChangeAppMode: (mode: AppMode) => void;
+  /** 贴边时机（毫秒）：离开面板多久后自动收回；设置页透传给 SettingsView 编辑 */
+  leaveCollapseMs: number;
+  hoverExpandMs: number;
+  onChangeHoverExpand: (ms: number) => void;
+  onChangeLeaveCollapse: (ms: number) => void;
   /** 图钉固定：固定时屏蔽一切自动收起（移出/点外部/Esc/失焦），全屏强制收回除外 */
   pinned: boolean;
   onTogglePin: () => void;
@@ -55,6 +60,10 @@ export function Panel({
   animationsEnabled,
   appMode,
   onChangeAppMode,
+  leaveCollapseMs,
+  hoverExpandMs,
+  onChangeHoverExpand,
+  onChangeLeaveCollapse,
   pinned,
   onTogglePin,
   onChangeAnimations,
@@ -202,7 +211,7 @@ export function Panel({
     collapseTimer.current = window.setTimeout(() => {
       collapseTimer.current = null;
       requestCollapse();
-    }, 1500);
+    }, leaveCollapseMs);
   }
 
   // 卸载时清掉所有撤销提示的自动消失定时器
@@ -387,6 +396,10 @@ export function Panel({
           animationsEnabled={animationsEnabled}
           onChangeAnimations={onChangeAnimations}
           appMode={appMode}
+          hoverExpandMs={hoverExpandMs}
+          leaveCollapseMs={leaveCollapseMs}
+          onChangeHoverExpand={onChangeHoverExpand}
+          onChangeLeaveCollapse={onChangeLeaveCollapse}
           onChangeAppMode={onChangeAppMode}
           onClose={() => setShowSettings(false)}
         />

@@ -11,11 +11,20 @@ use tauri::{Emitter, LogicalPosition, LogicalSize, Monitor, State, WebviewWindow
 
 use crate::db::{self, Db};
 
-// 高度比例：展开与收起细条一致（用户反馈：细条高度 = 面板高度 = 屏高 35%）
+// 高度：收起细条 = 屏高 35%；展开面板同为屏高 35%，但不得低于 MIN_PANEL_HEIGHT
+// （两者解绑，2026-09-05 用户确认：细条保持纤细，加高只加在展开面板上）
 const COLLAPSED_WIDTH: f64 = 6.0;
 const COLLAPSED_HEIGHT_RATIO: f64 = 0.35;
 const EXPANDED_WIDTH: f64 = 340.0;
 const EXPANDED_HEIGHT_RATIO: f64 = 0.35;
+/// 展开面板/窗口模式的最低高度（逻辑像素）：提醒/编辑弹层固定高 430/470px，
+/// 加上下留白取整；窗口矮于该值时弹层超出窗口部分直接不可见（用户反馈截图）。
+const MIN_PANEL_HEIGHT: f64 = 500.0;
+
+/// 展开态高度：屏高 35% 与最低高度取大——小屏（35% 只有两三百像素）也能完整装下弹层
+fn expanded_height(monitor_height: f64) -> f64 {
+    (monitor_height * EXPANDED_HEIGHT_RATIO).max(MIN_PANEL_HEIGHT)
+}
 
 /// settings 键：细条垂直中心占主屏高度的比例（0..1），换分辨率不失效（docs/01 第 3.3 节）
 pub const STRIP_RATIO_SETTING_KEY: &str = "strip_center_ratio";
@@ -224,16 +233,19 @@ struct WindowGeometry {
 }
 
 /// 按模式 + 细条垂直比例算目标几何。x 恒贴主屏右缘；y 由比例给出，越界时
-/// 顶到上/下边界（细条与展开面板高度一致，同一 clamp 两态都适用）。
+/// 顶到上/下边界（clamp 按各态自身高度计算，展开态含最低高度托底）。
 fn geometry_for(monitor: Monitor, mode: WindowMode, center_ratio: f64) -> WindowGeometry {
     let scale_factor = monitor.scale_factor();
     let monitor_size: LogicalSize<f64> = monitor.size().to_logical(scale_factor);
     let monitor_position: LogicalPosition<f64> = monitor.position().to_logical(scale_factor);
-    let (width, height_ratio) = match mode {
-        WindowMode::Collapsed => (COLLAPSED_WIDTH, COLLAPSED_HEIGHT_RATIO),
-        WindowMode::Expanded => (EXPANDED_WIDTH, EXPANDED_HEIGHT_RATIO),
+    let width = match mode {
+        WindowMode::Collapsed => COLLAPSED_WIDTH,
+        WindowMode::Expanded => EXPANDED_WIDTH,
     };
-    let height = monitor_size.height * height_ratio;
+    let height = match mode {
+        WindowMode::Collapsed => monitor_size.height * COLLAPSED_HEIGHT_RATIO,
+        WindowMode::Expanded => expanded_height(monitor_size.height),
+    };
     let min_center = monitor_position.y + height / 2.0;
     let max_center = monitor_position.y + monitor_size.height - height / 2.0;
     let center = monitor_position.y + center_ratio * monitor_size.height;
@@ -351,12 +363,12 @@ fn set_edge_assist_styles(_: &WebviewWindow, _: bool) -> Result<(), String> {
     Ok(())
 }
 
-/// 窗口模式几何：与展开面板同尺寸，主屏居中落位（进入窗口模式/启动时）。
+/// 窗口模式几何：与展开面板同尺寸（含最低高度托底），主屏居中落位。
 fn window_mode_geometry(monitor: Monitor) -> WindowGeometry {
     let scale_factor = monitor.scale_factor();
     let monitor_size: LogicalSize<f64> = monitor.size().to_logical(scale_factor);
     let monitor_position: LogicalPosition<f64> = monitor.position().to_logical(scale_factor);
-    let height = monitor_size.height * EXPANDED_HEIGHT_RATIO;
+    let height = expanded_height(monitor_size.height);
     WindowGeometry {
         size: LogicalSize::new(EXPANDED_WIDTH, height),
         position: LogicalPosition::new(
@@ -523,12 +535,13 @@ fn enter_window_mode(window: &WebviewWindow, state: &Arc<WindowCtlState>) -> Res
         .set_shadow(false)
         .map_err(|error| error.to_string())?;
     // 自由调整大小（用户反馈 2026-09-04）；默认尺寸仍由 window_mode_geometry 给出，
-    // 每次进入窗口模式都回到默认尺寸。最小尺寸防止缩成一团没法用。
+    // 每次进入窗口模式都回到默认尺寸。最小高度 = 弹层托底（ReminderPicker
+    // 编辑态高 470px），防止缩矮后弹层被截断；最小宽沿用原值（弹层宽 264px 装得下）。
     window
         .set_resizable(true)
         .map_err(|error| error.to_string())?;
     window
-        .set_min_size(Some(LogicalSize::new(280.0, 220.0)))
+        .set_min_size(Some(LogicalSize::new(280.0, MIN_PANEL_HEIGHT)))
         .map_err(|error| error.to_string())?;
     let monitor = window
         .primary_monitor()
