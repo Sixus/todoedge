@@ -26,3 +26,4 @@ dist-ssr
 # 本地工具目录与冗余压缩包
 .zcode/
 v0.zip
+cu-*.png

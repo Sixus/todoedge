@@ -24,32 +24,37 @@ pub const DEFAULT_STRIP_CENTER_RATIO: f64 = 0.5;
 
 /// settings 键：运行模式（"edge" 贴边 / "window" 窗口），设置页「运行模式」读写
 pub const APP_MODE_SETTING_KEY: &str = "app_mode";
-/// settings 键：窗口模式背景材质（"blur" 系统毛玻璃 / "clear" 普通透明）
+/// settings 键：窗口模式背景材质（"acrylic" 系统亚克力 / "blur" 旧版毛玻璃 /
+/// "clear" 普通透明）
 pub const WINDOW_MATERIAL_SETTING_KEY: &str = "window_material";
 
-/// 窗口模式背景材质。系统毛玻璃（DWM blur behind）在实体机上是真的背景模糊，
-/// 但部分虚拟显示器/云电脑/远程会话的 DWM 不支持背景采样，只会渲染纯色兜底
-/// （本项目 docs/01 第 7 节实测记录的现象），此时可切「普通透明」纯逐像素透色。
+/// 窗口模式背景材质。系统亚克力（Win11 DWM SystemBackdrop，微信同款实时
+/// 模糊）是默认与推荐项；「毛玻璃」是 Win8/10 时代的 accent blur 接口，在
+/// Win11 上实测只剩黑色底、拖动中被系统禁用变回透明、且拖动严重掉帧
+/// （实体机反馈 2026-09-04），仅保留给 Win10；普通透明为纯逐像素透色。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum WindowMaterial {
+    Acrylic,
     Blur,
     Clear,
 }
 
-const MATERIAL_BLUR: u8 = 0;
-const MATERIAL_CLEAR: u8 = 1;
+const MATERIAL_ACRYLIC: u8 = 0;
+const MATERIAL_BLUR: u8 = 1;
+const MATERIAL_CLEAR: u8 = 2;
 
 impl WindowMaterial {
     fn from_u8(value: u8) -> Self {
-        if value == MATERIAL_CLEAR {
-            WindowMaterial::Clear
-        } else {
-            WindowMaterial::Blur
+        match value {
+            MATERIAL_BLUR => WindowMaterial::Blur,
+            MATERIAL_CLEAR => WindowMaterial::Clear,
+            _ => WindowMaterial::Acrylic,
         }
     }
 
     fn as_u8(self) -> u8 {
         match self {
+            WindowMaterial::Acrylic => MATERIAL_ACRYLIC,
             WindowMaterial::Blur => MATERIAL_BLUR,
             WindowMaterial::Clear => MATERIAL_CLEAR,
         }
@@ -57,6 +62,7 @@ impl WindowMaterial {
 
     pub fn as_str(self) -> &'static str {
         match self {
+            WindowMaterial::Acrylic => "acrylic",
             WindowMaterial::Blur => "blur",
             WindowMaterial::Clear => "clear",
         }
@@ -64,6 +70,7 @@ impl WindowMaterial {
 
     fn parse(text: &str) -> Result<Self, String> {
         match text {
+            "acrylic" => Ok(WindowMaterial::Acrylic),
             "blur" => Ok(WindowMaterial::Blur),
             "clear" => Ok(WindowMaterial::Clear),
             other => Err(format!("未知窗口背景材质：{other}")),
@@ -433,15 +440,60 @@ fn focus_window(window: &WebviewWindow) -> Result<(), String> {
     window.set_focus().map_err(|error| error.to_string())
 }
 
-/// 按当前材质设置应用窗口背景：毛玻璃 = DWM blur behind，普通透明 = 撤掉
-/// 系统材质恢复纯逐像素透色（云电脑等不支持 DWM 背景采样的环境用）。
+/// Win11 DWM SystemBackdrop 实时亚克力（DWMWA_SYSTEMBACKDROP_TYPE =
+/// DWMSBT_TRANSIENTWINDOW）：GPU 合成、拖动不掉帧、拖动中不失效，微信 PC
+/// 侧边栏同款效果。Win10 / 不支持的 DWM 上返回 false，表现为普通透明。
+#[cfg(windows)]
+fn set_system_backdrop(window: &WebviewWindow, enable: bool) -> bool {
+    use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_SYSTEMBACKDROP_TYPE, DWMSBT_NONE, DWMSBT_TRANSIENTWINDOW,
+        DWM_SYSTEMBACKDROP_TYPE,
+    };
+
+    let Ok(hwnd) = window.hwnd() else {
+        return false;
+    };
+    let value = DWM_SYSTEMBACKDROP_TYPE(if enable {
+        DWMSBT_TRANSIENTWINDOW.0
+    } else {
+        DWMSBT_NONE.0
+    });
+    unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_SYSTEMBACKDROP_TYPE,
+            std::ptr::from_ref(&value).cast(),
+            std::mem::size_of::<DWM_SYSTEMBACKDROP_TYPE>() as u32,
+        )
+        .is_ok()
+    }
+}
+
+#[cfg(not(windows))]
+fn set_system_backdrop(_: &WebviewWindow, _: bool) -> bool {
+    false
+}
+
+/// 按当前材质设置应用窗口背景。三种材质互斥，切换时要把上一种的系统状态
+/// 撤干净：亚克力关 accent，毛玻璃/普通透明关 SystemBackdrop。
 fn apply_window_material(
     window: &WebviewWindow,
     material: WindowMaterial,
 ) -> Result<(), String> {
     match material {
-        WindowMaterial::Blur => apply_glass_blur(window),
-        WindowMaterial::Clear => clear_glass_blur(window),
+        WindowMaterial::Acrylic => {
+            clear_glass_blur(window)?;
+            set_system_backdrop(window, true);
+            Ok(())
+        }
+        WindowMaterial::Blur => {
+            set_system_backdrop(window, false);
+            apply_glass_blur(window)
+        }
+        WindowMaterial::Clear => {
+            set_system_backdrop(window, false);
+            clear_glass_blur(window)
+        }
     }
 }
 
@@ -709,15 +761,26 @@ pub fn load_app_mode(db: &Db) -> AppShellMode {
         .unwrap_or(AppShellMode::Edge)
 }
 
-/// 启动时从 settings 恢复窗口模式背景材质；缺失/损坏一律回系统毛玻璃。
+/// 启动时从 settings 恢复窗口模式背景材质；缺失/损坏一律回系统亚克力。
+/// 1.2.0-beta 首版默认「毛玻璃」，实体机实测 Win11 上只剩黑色底、拖动中
+/// 失效且严重掉帧，故把存量 "blur" 自动迁移为系统亚克力。
 pub fn load_window_material(db: &Db) -> WindowMaterial {
-    db.0.lock()
+    let stored = db
+        .0
+        .lock()
         .map_err(|_| ())
         .ok()
         .and_then(|conn| db::setting_get(&conn, WINDOW_MATERIAL_SETTING_KEY).ok())
-        .flatten()
+        .flatten();
+    if matches!(stored.as_deref(), Some("blur")) {
+        if let Ok(conn) = db.0.lock() {
+            let _ = db::setting_set(&conn, WINDOW_MATERIAL_SETTING_KEY, "acrylic");
+        }
+        return WindowMaterial::Acrylic;
+    }
+    stored
         .and_then(|text| WindowMaterial::parse(&text).ok())
-        .unwrap_or(WindowMaterial::Blur)
+        .unwrap_or(WindowMaterial::Acrylic)
 }
 
 /// 设置里切换运行模式（贴边↔窗口）：先落库，再就地变换窗口形态。
@@ -760,6 +823,8 @@ pub fn set_app_mode(
             window
                 .set_shadow(false)
                 .map_err(|error| error.to_string())?;
+            // 撤掉窗口模式可能遗留的系统亚克力背景
+            set_system_backdrop(&window, false);
             // 先撤最小尺寸再收细条：6px 宽远小于窗口模式的最小宽
             window
                 .set_min_size::<LogicalSize<f64>>(None)

@@ -5,6 +5,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { api } from "../lib/api";
 import {
   WINDOW_MATERIAL_SETTING_KEY,
+  applyWindowMaterial,
   normalizeWindowMaterial,
   type AppMode,
   type WindowMaterial,
@@ -59,8 +60,8 @@ export function SettingsView({
   onClose,
 }: SettingsViewProps) {
   const [material, setMaterial] = useState<Material>("glass");
-  // 窗口模式背景材质（毛玻璃/普通透明），仅窗口模式下显示
-  const [windowMaterial, setWindowMaterial] = useState<WindowMaterial>("blur");
+  // 窗口模式背景材质（亚克力/毛玻璃/普通透明），仅窗口模式下显示
+  const [windowMaterial, setWindowMaterial] = useState<WindowMaterial>("acrylic");
   const [theme, setTheme] = useState<ThemeMode>("auto");
   const [hotkey, setHotkey] = useState(DEFAULT_HOTKEY);
   const [recording, setRecording] = useState(false);
@@ -112,10 +113,11 @@ export function SettingsView({
     });
   }, []);
 
-  // 窗口模式背景材质：Rust 落库并即时应用/撤销系统材质（普通透明用于
-  // 云电脑/远程会话等 DWM 不支持背景采样的环境）
+  // 窗口模式背景材质：Rust 落库并即时应用/撤销系统材质（亚克力在 Win11 上
+  // 是微信同款实时模糊；毛玻璃为旧版接口仅 Win10 用；普通透明用于云电脑等）
   const changeWindowMaterial = useCallback((next: WindowMaterial) => {
     setWindowMaterial(next);
+    applyWindowMaterial(next);
     void api.setWindowMaterial(next).catch((cause) => {
       setError(errorMessage(cause));
     });
@@ -251,10 +253,20 @@ export function SettingsView({
           <div className="settings-text">
             <p className="settings-label">窗口背景</p>
             <p className="settings-desc">
-              系统毛玻璃=背景真模糊；云电脑/远程桌面不支持时选普通透明
+              亚克力=Win11 实时模糊（微信同款，推荐）；毛玻璃=旧接口，Win11
+              上会发黑卡顿；云电脑/远程桌面选普通透明
             </p>
           </div>
           <div className="settings-segment" role="radiogroup" aria-label="窗口背景">
+            <button
+              aria-checked={windowMaterial === "acrylic"}
+              className={windowMaterial === "acrylic" ? "active" : ""}
+              onClick={() => changeWindowMaterial("acrylic")}
+              role="radio"
+              type="button"
+            >
+              亚克力
+            </button>
             <button
               aria-checked={windowMaterial === "blur"}
               className={windowMaterial === "blur" ? "active" : ""}

@@ -9,8 +9,11 @@ import { Strip } from "./components/Strip";
 import { useTasks } from "./hooks/useTasks";
 import {
   APP_MODE_SETTING_KEY,
+  WINDOW_MATERIAL_SETTING_KEY,
   applyAppMode,
+  applyWindowMaterial,
   normalizeAppMode,
+  normalizeWindowMaterial,
   type AppMode,
 } from "./lib/appMode";
 import { api, type WindowMode } from "./lib/api";
@@ -52,6 +55,11 @@ function App() {
     void api
       .getSetting(MATERIAL_SETTING_KEY)
       .then((value) => applyMaterial(normalizeMaterial(value)))
+      .catch(() => undefined);
+    // 窗口模式背景材质：恢复 data-window-material（CSS 面板底色浓度跟随）
+    void api
+      .getSetting(WINDOW_MATERIAL_SETTING_KEY)
+      .then((value) => applyWindowMaterial(normalizeWindowMaterial(value)))
       .catch(() => undefined);
     // 运行模式：窗口模式启动时直接进面板（Rust 侧已按模式落位窗口与毛玻璃）
     void api

@@ -115,3 +115,22 @@
   --bg: rgba(32, 32, 32, 0.5);
   --surface-hover: rgba(255, 255, 255, 0.08);
 }
+
+/*
+ * 窗口模式 + 系统亚克力（Win11 DWM SystemBackdrop）：亚克力本体已有较强
+ * 毛玻璃度，面板底色再淡一档，避免整体发闷；云电脑等不支持的环境下亚克力
+ * 退化为纯色兜底，此浓度同样可读。
+ */
+:root[data-app-mode="window"][data-window-material="acrylic"]:not(
+    [data-material="solid"]
+  ) {
+  --bg: rgba(244, 244, 244, 0.35);
+  --surface-hover: rgba(255, 255, 255, 0.3);
+}
+
+:root[data-theme="dark"][data-app-mode="window"][data-window-material="acrylic"]:not(
+    [data-material="solid"]
+  ) {
+  --bg: rgba(32, 32, 32, 0.35);
+  --surface-hover: rgba(255, 255, 255, 0.08);
+}

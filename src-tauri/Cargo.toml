@@ -1,6 +1,6 @@
 [package]
 name = "todoedge"
-version = "1.2.0-beta"
+version = "1.2.0-beta.2"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -32,6 +32,7 @@ windows = { version = "0.61.3", features = [
   "Foundation",
   "UI_Notifications",
   "Win32_Foundation",
+  "Win32_Graphics_Dwm",
   "Win32_System_Com",
   "Win32_System_LibraryLoader",
   "Win32_System_Registry",
@@ -40,7 +41,8 @@ windows = { version = "0.61.3", features = [
   "Win32_UI_WindowsAndMessaging",
 ] }
 tauri-plugin-clipboard-manager = "2.3.3"
-# 窗口模式（设置里「运行模式=窗口」）的系统级毛玻璃：仅窗口模式使用，
-# 贴边模式仍走原生逐像素透明（docs/01 第 7 节约定不变）
+# 窗口模式（设置里「运行模式=窗口」）的系统级背景材质：默认走 Win11 DWM
+# SystemBackdrop 亚克力（window_ctl.rs 直接调 DwmSetWindowAttribute），
+# window-vibrancy 仅用于「旧版毛玻璃」兼容档；贴边模式仍走原生逐像素透明
 window-vibrancy = "0.5"
 
