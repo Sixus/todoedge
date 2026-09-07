@@ -5,7 +5,7 @@ import type { Dayjs } from "dayjs";
 import { ClockIcon, RepeatIcon } from "./icons";
 
 interface ReminderPickerProps {
-  /** 现有提醒时间（ISO）；null = 尚未设置（不显示「清除」与「重复」行） */
+  /** 现有提醒时间（ISO）；null = 尚未设置（不显示「清除」） */
   initial: string | null;
   /** 任务当前重复规则（none|daily|weekly|monthly），重复行的初始选中值 */
   initialRepeat?: string;
@@ -50,8 +50,8 @@ function ceilToHalfHour(time: Dayjs): Dayjs {
 
 /**
  * 三段式提醒选择弹层（用户参考系统日历样式）：
- * ① 日历选日期（可翻月）；② 整点/半点时间下拉；③ 重复行（任务已设时间才显示，
- * M4-1）；④ 清除 / 确定两个大按钮。编辑模式在顶部多一个标题输入框。点卡片外即取消。
+ * ① 日历选日期（可翻月）；② 整点/半点时间下拉；③ 重复行（常驻，M4-1）；
+ * ④ 清除 / 确定两个大按钮。编辑模式在顶部多一个标题输入框。点卡片外即取消。
  */
 export function ReminderPicker({
   initial,
@@ -236,32 +236,27 @@ export function ReminderPicker({
           ) : null}
         </div>
 
-        {/* ③ 重复行（M4-1）：重复跟随提醒时间，未设时间的任务不显示 */}
-        {initial !== null ? (
-          <div
-            aria-label="重复"
-            className="picker-repeat-row mt-1.5"
-            role="radiogroup"
-          >
-            <RepeatIcon className="h-4 w-4 shrink-0" />
-            <div className="picker-repeat-options">
-              {REPEAT_OPTIONS.map((option) => (
-                <button
-                  aria-checked={option.value === repeatText}
-                  className={`picker-repeat-option${
-                    option.value === repeatText ? " picker-repeat-option-selected" : ""
-                  }`}
-                  key={option.value}
-                  onClick={() => setRepeatText(option.value)}
-                  role="radio"
-                  type="button"
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+        {/* ③ 重复行（M4-1）：常驻显示——弹层的确定必然携带时间，顺手选重复；
+            只点「清除」时重复由后端一并重置 none */}
+        <div aria-label="重复" className="picker-repeat-row mt-1.5" role="radiogroup">
+          <RepeatIcon className="h-4 w-4 shrink-0" />
+          <div className="picker-repeat-options">
+            {REPEAT_OPTIONS.map((option) => (
+              <button
+                aria-checked={option.value === repeatText}
+                className={`picker-repeat-option${
+                  option.value === repeatText ? " picker-repeat-option-selected" : ""
+                }`}
+                key={option.value}
+                onClick={() => setRepeatText(option.value)}
+                role="radio"
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
-        ) : null}
+        </div>
 
         {/* ④ 清除 / 确定两个大按钮 */}
         <div className="mt-2.5 flex gap-2">
