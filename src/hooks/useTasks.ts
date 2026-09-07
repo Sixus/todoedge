@@ -31,8 +31,8 @@ export function useTasks() {
   }, [reload]);
 
   const addTask = useCallback(
-    async (title: string, remindAt?: string | null) => {
-      await api.addTask(title, remindAt);
+    async (title: string, remindAt?: string | null, repeat?: string) => {
+      await api.addTask(title, remindAt, repeat);
       await reload();
     },
     [reload],
@@ -64,11 +64,12 @@ export function useTasks() {
     [reload],
   );
 
-  /** 编辑任务：标题 + 提醒时间（null = 清除提醒）。改期会重置 notified 重新进入调度 */
+  /** 编辑任务：标题 + 提醒时间 + 重复规则（M4-1；null = 清除提醒，
+   *  清除时重复由后端一并重置 none）。改期会重置 notified 重新进入调度 */
   const editTask = useCallback(
-    async (id: number, title: string, remindAt: string | null) => {
+    async (id: number, title: string, remindAt: string | null, repeat?: string) => {
       if (remindAt) {
-        await api.updateTask(id, title, remindAt);
+        await api.updateTask(id, title, remindAt, repeat);
       } else {
         await api.updateTask(id, title);
         await api.clearReminder(id);

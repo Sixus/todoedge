@@ -6,7 +6,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 pub struct Db(pub Mutex<Connection>);
 
 /// 已落地的迁移清单：新迁移只能追加到末尾，禁止改动历史迁移（AGENTS.md 规则 6）。
-const MIGRATIONS: &[(i64, &str)] = &[(1, include_str!("../migrations/001_init.sql"))];
+const MIGRATIONS: &[(i64, &str)] = &[
+    (1, include_str!("../migrations/001_init.sql")),
+    (2, include_str!("../migrations/002_repeat_completions.sql")),
+];
 
 impl Db {
     /// 打开 {app_data_dir}/todoedge/todo.db，目录不存在则创建，并补齐迁移。

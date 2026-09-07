@@ -125,3 +125,15 @@ export function LockIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+/** ↻ 重复标记：设了重复规则的任务在提醒时间旁显示（M4-1） */
+export function RepeatIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M17 2.5 20.5 6 17 9.5" />
+      <path d="M3.5 12V10a4 4 0 0 1 4-4h13" />
+      <path d="m7 21.5-3.5-3.5L7 14.5" />
+      <path d="M20.5 12v2a4 4 0 0 1-4 4h-13" />
+    </svg>
+  );
+}

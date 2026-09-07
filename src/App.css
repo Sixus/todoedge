@@ -381,6 +381,46 @@ button {
   color: var(--check-fg);
 }
 
+/* 重复行（M4-1）：时间行下方一排档位小按钮，任务未设提醒时间时不渲染 */
+.picker-repeat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--fg);
+}
+
+.picker-repeat-options {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+}
+
+.picker-repeat-option {
+  flex: 1;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 120ms ease-out, color 120ms ease-out;
+}
+
+.picker-repeat-option:hover {
+  color: var(--fg);
+}
+
+.picker-repeat-option-selected {
+  background: var(--check-bg);
+  color: var(--check-fg);
+}
+
 /* 新建任务输入框内联提醒时间（替换闹钟按钮位置） */
 .inline-reminder {
   display: flex;

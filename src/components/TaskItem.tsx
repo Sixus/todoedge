@@ -4,7 +4,7 @@ import type { Dayjs } from "dayjs";
 
 import { formatTaskTime, isOverdue } from "../lib/format";
 import type { Task } from "../lib/api";
-import { CheckIcon, EditIcon, TrashIcon, XIcon } from "./icons";
+import { CheckIcon, EditIcon, RepeatIcon, TrashIcon, XIcon } from "./icons";
 import { ReminderPicker } from "./ReminderPicker";
 
 interface TaskItemProps {
@@ -14,8 +14,13 @@ interface TaskItemProps {
   onHighlightEnd: () => void;
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
-  /** 编辑任务标题 + 提醒时间（null = 清除提醒） */
-  onEditTask: (id: number, title: string, remindAt: string | null) => Promise<void>;
+  /** 编辑任务标题 + 提醒时间 + 重复规则（null = 清除提醒） */
+  onEditTask: (
+    id: number,
+    title: string,
+    remindAt: string | null,
+    repeat?: string,
+  ) => Promise<void>;
   /** 手动排序（Pointer Events 自实现，TaskList 编排；跨分区忽略） */
   onRowPointerDown: (id: number, done: boolean, event: PointerEvent<HTMLLIElement>) => void;
   onRowPointerMove: (id: number, done: boolean, event: PointerEvent<HTMLLIElement>) => void;
@@ -139,6 +144,12 @@ export function TaskItem({
           {timeText}
         </span>
       ) : null}
+      {task.repeat !== "none" ? (
+        <RepeatIcon
+          aria-label={`重复：${task.repeat}`}
+          className="h-3 w-3 shrink-0 text-[color:var(--fg-muted)]"
+        />
+      ) : null}
       <button
         aria-label={`编辑任务「${task.title}」`}
         className="icon-btn icon-btn-sm shrink-0 opacity-0 transition-opacity duration-150 focus-visible:opacity-100 group-hover:opacity-100"
@@ -167,11 +178,12 @@ export function TaskItem({
         <ReminderPicker
           anchor={pickerAnchor}
           initial={task.remindAt}
+          initialRepeat={task.repeat}
           initialTitle={task.title}
           onCancel={() => setPickerAnchor(null)}
-          onConfirm={({ remindAt, title }) => {
+          onConfirm={({ remindAt, repeat, title }) => {
             setPickerAnchor(null);
-            void onEditTask(task.id, title ?? task.title, remindAt);
+            void onEditTask(task.id, title ?? task.title, remindAt, repeat);
           }}
         />
       ) : null}

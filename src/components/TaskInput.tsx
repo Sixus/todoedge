@@ -7,7 +7,7 @@ import { ClockIcon, PlusIcon } from "./icons";
 import { ReminderPicker } from "./ReminderPicker";
 
 interface TaskInputProps {
-  onAdd: (title: string, remindAt?: string | null) => Promise<void>;
+  onAdd: (title: string, remindAt?: string | null, repeat?: string) => Promise<void>;
 }
 
 export function TaskInput({ onAdd }: TaskInputProps) {
@@ -15,6 +15,8 @@ export function TaskInput({ onAdd }: TaskInputProps) {
   const [isAdding, setIsAdding] = useState(false);
   // ⏰ 选择器显式设定的提醒时间；设定后优先于自然语言解析（以选择器修正为准）
   const [pickedRemindAt, setPickedRemindAt] = useState<string | null>(null);
+  // ⏰ 选择器一并设定的重复规则（M4-1），只在已选时间时生效
+  const [pickedRepeat, setPickedRepeat] = useState("none");
   const [pickerAnchor, setPickerAnchor] = useState<{ top: number; right: number } | null>(
     null,
   );
@@ -45,9 +47,10 @@ export function TaskInput({ onAdd }: TaskInputProps) {
 
     setIsAdding(true);
     try {
-      await onAdd(taskTitle, remindAt);
+      await onAdd(taskTitle, remindAt, pickedRepeat);
       setTitle("");
       setPickedRemindAt(null);
+      setPickedRepeat("none");
     } finally {
       setIsAdding(false);
     }
@@ -121,9 +124,12 @@ export function TaskInput({ onAdd }: TaskInputProps) {
         <ReminderPicker
           anchor={pickerAnchor}
           initial={pickedRemindAt}
+          initialRepeat={pickedRepeat}
           onCancel={() => setPickerAnchor(null)}
-          onConfirm={({ remindAt }) => {
+          onConfirm={({ remindAt, repeat }) => {
             setPickedRemindAt(remindAt);
+            // 清除（remindAt=null）时重复一并归零；后端对无时间的任务也会兜底回 none
+            setPickedRepeat(remindAt ? (repeat ?? "none") : "none");
             setPickerAnchor(null);
           }}
         />

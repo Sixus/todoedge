@@ -217,10 +217,8 @@ mod imp {
             ArgKind::Done => {
                 let db = app.state::<Db>();
                 let conn = db.0.lock().expect("数据库锁已损坏");
-                if let Err(e) = conn.execute(
-                    "UPDATE tasks SET done = 1, done_at = ?2 WHERE id = ?1",
-                    params![id, now_rfc3339()],
-                ) {
+                // 走 toggle_task 同一条完成路径（M4-1）：重复任务同样结算旧卡+生成新卡
+                if let Err(e) = crate::commands::complete_task(&conn, id) {
                     eprintln!("任务 {id} 标记完成失败：{e}");
                     return;
                 }
@@ -332,10 +330,6 @@ mod imp {
             }
         }
         Ok(())
-    }
-
-    fn now_rfc3339() -> String {
-        Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
     }
 
     /// XML 文本转义（任务标题来自用户输入）。

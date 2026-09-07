@@ -2,23 +2,25 @@ import { useEffect, useRef, useState } from "react";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 
-import { ClockIcon } from "./icons";
+import { ClockIcon, RepeatIcon } from "./icons";
 
 interface ReminderPickerProps {
-  /** 现有提醒时间（ISO）；null = 尚未设置（不显示「清除」） */
+  /** 现有提醒时间（ISO）；null = 尚未设置（不显示「清除」与「重复」行） */
   initial: string | null;
+  /** 任务当前重复规则（none|daily|weekly|monthly），重复行的初始选中值 */
+  initialRepeat?: string;
   /** 触发控件在视口中的位置：弹层钉在它下方、右缘对齐 */
   anchor: { top: number; right: number };
   /** 传入时显示任务标题输入框（编辑模式），确认回调带 title */
   initialTitle?: string;
-  /** 确定：remindAt=null 表示清除提醒；title 仅编辑模式携带 */
-  onConfirm: (result: { remindAt: string | null; title?: string }) => void;
+  /** 确定：remindAt=null 表示清除提醒（重复由后端一并重置）；repeat 仅设有提醒时间时生效 */
+  onConfirm: (result: { remindAt: string | null; repeat?: string; title?: string }) => void;
   onCancel: () => void;
 }
 
 const CARD_WIDTH = 264;
-/** 估算高度用于视口底部钳制：日历 + 时间行 + 大按钮（编辑模式再加标题行） */
-const CARD_HEIGHT = 430;
+/** 估算高度用于视口底部钳制：日历 + 时间行 + 重复行 + 大按钮（编辑模式再加标题行） */
+const CARD_HEIGHT = 462;
 const EDIT_EXTRA_HEIGHT = 40;
 
 /** 可选时间只有整点和半点 */
@@ -27,6 +29,14 @@ const HALF_HOUR_OPTIONS = Array.from({ length: 48 }, (_, index) => {
   const minute = index % 2 === 0 ? "00" : "30";
   return `${String(hour).padStart(2, "0")}:${minute}`;
 });
+
+/** 重复档位（M4-1）：不重复为默认；每年档不做 */
+const REPEAT_OPTIONS = [
+  { value: "none", label: "不重复" },
+  { value: "daily", label: "每天" },
+  { value: "weekly", label: "每周" },
+  { value: "monthly", label: "每月" },
+];
 
 const WEEKDAY_HEADERS = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -40,11 +50,12 @@ function ceilToHalfHour(time: Dayjs): Dayjs {
 
 /**
  * 三段式提醒选择弹层（用户参考系统日历样式）：
- * ① 日历选日期（可翻月）；② 整点/半点时间下拉；③ 清除 / 确定两个大按钮。
- * 编辑模式在顶部多一个标题输入框。点卡片外即取消。
+ * ① 日历选日期（可翻月）；② 整点/半点时间下拉；③ 重复行（任务已设时间才显示，
+ * M4-1）；④ 清除 / 确定两个大按钮。编辑模式在顶部多一个标题输入框。点卡片外即取消。
  */
 export function ReminderPicker({
   initial,
+  initialRepeat,
   anchor,
   initialTitle,
   onConfirm,
@@ -60,6 +71,7 @@ export function ReminderPicker({
   const [timeStr, setTimeStr] = useState(defaultDay.format("HH:mm"));
   const [viewMonth, setViewMonth] = useState(() => defaultDay.startOf("month"));
   const [titleText, setTitleText] = useState(initialTitle ?? "");
+  const [repeatText, setRepeatText] = useState(initialRepeat ?? "none");
   const [timeListOpen, setTimeListOpen] = useState(false);
   const timeListRef = useRef<HTMLDivElement>(null);
 
@@ -105,6 +117,7 @@ export function ReminderPicker({
     }
     onConfirm({
       remindAt: selectedDay.hour(Number(timeStr.slice(0, 2))).minute(Number(timeStr.slice(3, 5))).toISOString(),
+      repeat: repeatText,
       ...(editMode ? { title: trimmedTitle } : {}),
     });
   }
@@ -223,7 +236,34 @@ export function ReminderPicker({
           ) : null}
         </div>
 
-        {/* ③ 清除 / 确定两个大按钮 */}
+        {/* ③ 重复行（M4-1）：重复跟随提醒时间，未设时间的任务不显示 */}
+        {initial !== null ? (
+          <div
+            aria-label="重复"
+            className="picker-repeat-row mt-1.5"
+            role="radiogroup"
+          >
+            <RepeatIcon className="h-4 w-4 shrink-0" />
+            <div className="picker-repeat-options">
+              {REPEAT_OPTIONS.map((option) => (
+                <button
+                  aria-checked={option.value === repeatText}
+                  className={`picker-repeat-option${
+                    option.value === repeatText ? " picker-repeat-option-selected" : ""
+                  }`}
+                  key={option.value}
+                  onClick={() => setRepeatText(option.value)}
+                  role="radio"
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {/* ④ 清除 / 确定两个大按钮 */}
         <div className="mt-2.5 flex gap-2">
           {initial !== null ? (
             <button

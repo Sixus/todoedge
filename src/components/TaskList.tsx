@@ -29,7 +29,12 @@ interface TaskListProps {
   highlightTaskId: number | null;
   onToggle: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
-  onEditTask: (id: number, title: string, remindAt: string | null) => Promise<void>;
+  onEditTask: (
+    id: number,
+    title: string,
+    remindAt: string | null,
+    repeat?: string,
+  ) => Promise<void>;
   /** 拖拽落定：按新顺序提交全部任务 id（待办在前、已完成在后） */
   onReorder: (orderedIds: number[]) => void;
   onHighlightEnd: () => void;

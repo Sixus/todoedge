@@ -10,7 +10,7 @@ import dayjs from "dayjs";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { api, type ResizeDirection, type Task } from "../lib/api";
+import { api, type Completion, type ResizeDirection, type Task } from "../lib/api";
 import type { AppMode } from "../lib/appMode";
 import { formatOverviewDate } from "../lib/format";
 import { CompletedIcon, LockIcon, PinIcon, SettingsIcon } from "./icons";
@@ -42,8 +42,13 @@ interface PanelProps {
   onDelete: (id: number) => Promise<void>;
   /** 撤销删除：按删除前快照原样恢复（M4 撤销 toast 用） */
   onRestoreTask: (task: Task) => Promise<void>;
-  /** 编辑任务标题 + 提醒时间（M2-3 编辑弹层；null = 清除提醒） */
-  onEditTask: (id: number, title: string, remindAt: string | null) => Promise<void>;
+  /** 编辑任务标题 + 提醒时间 + 重复规则（M2-3 编辑弹层；null = 清除提醒） */
+  onEditTask: (
+    id: number,
+    title: string,
+    remindAt: string | null,
+    repeat?: string,
+  ) => Promise<void>;
   /** 拖拽排序落定：按新顺序提交全部任务 id */
   onReorder: (orderedIds: number[]) => Promise<void>;
   onCollapse: () => void;
@@ -136,6 +141,8 @@ export function Panel({
   const [showSettings, setShowSettings] = useState(false);
   // 周报视图：点底栏「已完成」覆盖面板（M3-1）
   const [showReport, setShowReport] = useState(false);
+  // 周报重拉信号：撤销删除记录插回后自增，开着的周报立刻看到记录回来（M4-1）
+  const [reportReloadTick, setReportReloadTick] = useState(0);
   // 撤销 toast（M4 反馈）：完成/删除后底部弹出，15 秒内可撤销；
   // 多条并存堆叠展示，新触发的排在旧的上方，各自独立倒计时
   const [undoToasts, setUndoToasts] = useState<
@@ -300,6 +307,19 @@ export function Panel({
     });
   }
 
+  /** 删除一条完成记录（周报，M4-1）：只删记录，撤销=原样插回；
+   *  插回后 bump 信号让开着的周报立刻重拉 */
+  function handleDeleteCompletionWithUndo(completion: Completion) {
+    return api.deleteCompletion(completion.id).then(() => {
+      showUndoToast(`已删除「${completion.title}」`, () => {
+        api
+          .restoreCompletion(completion)
+          .then(() => setReportReloadTick((tick) => tick + 1))
+          .catch(() => undefined);
+      });
+    });
+  }
+
   function handleInputFocus() {
     clearCollapseTimer();
     isEditingRef.current = true;
@@ -390,7 +410,11 @@ export function Panel({
       tabIndex={-1}
     >
       {showReport ? (
-        <ReportView onClose={() => setShowReport(false)} onDelete={handleDeleteWithUndo} tasks={tasks} />
+        <ReportView
+          onClose={() => setShowReport(false)}
+          onDelete={handleDeleteCompletionWithUndo}
+          reloadSignal={reportReloadTick}
+        />
       ) : showSettings ? (
         <SettingsView
           animationsEnabled={animationsEnabled}

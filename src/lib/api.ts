@@ -3,17 +3,29 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { AppMode, WindowMaterial } from "./appMode";
 
-/** 与 Rust 侧 commands::Task 对齐（camelCase），时间一律 RFC3339 字符串（UTC） */
+/** 与 Rust 侧 commands::Task 对齐（camelCase），时间一律 RFC3339 字符串（UTC）。
+ *  repeat：重复规则 none|daily|weekly|monthly；originId：重复任务勾掉后
+ *  新建的下一期卡指回被结算的旧卡 */
 export interface Task {
   id: number;
   title: string;
   remindAt: string | null;
+  repeat: string;
   notified: boolean;
   done: boolean;
   doneAt: string | null;
   sortOrder: number | null;
   groupId: number | null;
   createdAt: string;
+  originId: number | null;
+}
+
+/** 完成记录（M4-1）：周报数据源，重复任务每结算一期一条 */
+export interface Completion {
+  id: number;
+  taskId: number;
+  title: string;
+  doneAt: string;
 }
 
 export type WindowMode = "collapsed" | "expanded";
@@ -31,17 +43,24 @@ export type ResizeDirection =
 
 export const api = {
   listTasks: () => invoke<Task[]>("list_tasks"),
-  addTask: (title: string, remindAt?: string | null) =>
-    invoke<Task>("add_task", { title, remindAt }),
+  /** repeat：none|daily|weekly|monthly，非法值后端兜底回 none */
+  addTask: (title: string, remindAt?: string | null, repeat?: string) =>
+    invoke<Task>("add_task", { title, remindAt, repeat }),
   toggleTask: (id: number) => invoke<Task>("toggle_task", { id }),
   deleteTask: (id: number) => invoke<void>("delete_task", { id }),
   /** 撤销删除：按删除前快照原样恢复（含原完成状态与手动排序） */
   restoreTask: (task: Task) => invoke<Task>("restore_task", { task }),
-  /** 只更新传入的字段，其余保持不变（M2 改期用） */
-  updateTask: (id: number, title?: string, remindAt?: string | null) =>
-    invoke<Task>("update_task", { id, title, remindAt }),
-  /** 清除提醒时间（M2-3 选择器「清除提醒」） */
+  /** 只更新传入的字段，其余保持不变（M2 改期用；M4-1 起可带 repeat） */
+  updateTask: (id: number, title?: string, remindAt?: string | null, repeat?: string) =>
+    invoke<Task>("update_task", { id, title, remindAt, repeat }),
+  /** 清除提醒时间（M2-3 选择器「清除提醒」），重复一并重置 none */
   clearReminder: (id: number) => invoke<Task>("clear_reminder", { id }),
+  /** 完成记录（M4-1 周报数据源）：全量返回，前端按周过滤 */
+  listCompletions: () => invoke<Completion[]>("list_completions"),
+  deleteCompletion: (id: number) => invoke<void>("delete_completion", { id }),
+  /** 撤销周报删除：把完成记录原样插回 */
+  restoreCompletion: (completion: Completion) =>
+    invoke<Completion>("restore_completion", { completion }),
   /** 拖拽排序：按新顺序写入 sort_order */
   reorderTasks: (ids: number[]) => invoke<void>("reorder_tasks", { ids }),
   getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
