@@ -3,6 +3,7 @@ mod db;
 mod hotkey;
 mod scheduler;
 mod toast;
+mod tray;
 mod window_ctl;
 
 use std::sync::Arc;
@@ -62,6 +63,8 @@ pub fn run() {
             // 通知线程先于调度器启动（回调依赖 Db State；调度器会投递 Toast）
             toast::start(app.handle().clone());
             scheduler::start(app.handle().clone());
+            // 系统托盘：图标用应用默认图标，切换/菜单复用窗口与事件总线（M4-3）
+            tray::init(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

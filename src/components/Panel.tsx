@@ -240,6 +240,17 @@ export function Panel({
     };
   }, []);
 
+  // 托盘「打开设置」（M4-3）：Rust 侧已确保面板展开/呼出，这里打开设置弹层
+  useEffect(() => {
+    const unlisten = listen("tray-open-settings", () => {
+      setShowSettings(true);
+      setLocked(false);
+    });
+    return () => {
+      void unlisten.then((dispose) => dispose());
+    };
+  }, []);
+
   function removeUndoToast(id: number) {
     const timer = undoTimers.current.get(id);
     if (timer !== undefined) {
