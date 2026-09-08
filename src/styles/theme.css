@@ -10,12 +10,16 @@
  * [data-theme="dark"] 块里各写一次；实体相关的覆盖写在两个 [data-material] 块里。
  * 四组合 = (浅基底|深色块) × (无覆盖|实体覆盖)，块按此顺序排列保证深色实体最优先。
  * 实体模式要求不透明：面板/弹层背景用纯色，细条不再半透明（M3-2）。
+ *
+ * 透明浓度（--panel-alpha，0~1）由设置页「面板透明度」滑杆驱动（lib/opacity.ts
+ * 写在 :root 内联样式上），贴边透明、窗口普通透明与收起细条共用；窗口亚克力
+ * 浓度固定不随滑杆（系统材质本体已有毛玻璃度）。
  */
 :root {
   color-scheme: light;
 
-  /* 面板容器（透明度 70%，用户反馈调优） */
-  --bg: rgba(244, 244, 244, 0.7);
+  /* 面板容器（浓度跟随设置页「面板透明度」，缺省 70%） */
+  --bg: rgb(244 244 244 / var(--panel-alpha, 0.7));
   --fg: #242424;
   --fg-muted: #616161;
   --fg-faint: #707070;
@@ -37,9 +41,9 @@
   --done-fg: #707070;
   --danger: #b10e1c;
 
-  /* 收起细条 */
-  --strip-bg: rgb(255 255 255 / 58%);
-  --strip-opacity: 0.58;
+  /* 收起细条：底色纯白，浓度跟随面板透明度滑杆（App.css 的 hover 兜底不跌破） */
+  --strip-bg: #ffffff;
+  --strip-opacity: var(--panel-alpha, 0.7);
 
   /* 提醒时间选择弹层（M2-3，实体小卡片保证可读性） */
   --pop-bg: #ffffff;
@@ -61,8 +65,8 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  /* 面板容器（透明度 70%，用户反馈调优） */
-  --bg: rgba(32, 32, 32, 0.7);
+  /* 面板容器（浓度跟随设置页「面板透明度」，缺省 70%） */
+  --bg: rgb(32 32 32 / var(--panel-alpha, 0.7));
   --fg: #ffffff;
   --fg-muted: #adadad;
   --fg-faint: #999999;
@@ -103,23 +107,24 @@
 /*
  * 窗口模式（html[data-app-mode="window"]，设置里「运行模式=窗口」）：
  * 背景是 Rust 侧 apply_blur 做的系统级毛玻璃（DWM 合成，非 CSS
- * backdrop-filter），面板底色比贴边透明档更淡，让壁纸/后方窗口颜色透出。
- * 只作用于玻璃材质：:not([data-material="solid"]) 保证实体档依旧不透明。
+ * backdrop-filter）。普通透明档的面板底色浓度与贴边透明共用
+ * 设置页「面板透明度」滑杆（--bg 走基底里的 --panel-alpha，不在此覆盖），
+ * 这里只调 hover 底色。只作用于玻璃材质：
+ * :not([data-material="solid"]) 保证实体档依旧不透明。
  */
 :root[data-app-mode="window"]:not([data-material="solid"]) {
-  --bg: rgba(244, 244, 244, 0.5);
   --surface-hover: rgba(255, 255, 255, 0.38);
 }
 
 :root[data-theme="dark"][data-app-mode="window"]:not([data-material="solid"]) {
-  --bg: rgba(32, 32, 32, 0.5);
   --surface-hover: rgba(255, 255, 255, 0.08);
 }
 
 /*
  * 窗口模式 + 系统亚克力（Win11 DWM SystemBackdrop）：亚克力本体已有较强
- * 毛玻璃度，面板底色再淡一档，避免整体发闷；云电脑等不支持的环境下亚克力
- * 退化为纯色兜底，此浓度同样可读。
+ * 毛玻璃度，面板底色固定在更淡一档（不随「面板透明度」滑杆，系统材质
+ * 决定浓度），避免整体发闷；云电脑等不支持的环境下亚克力退化为纯色兜底，
+ * 此浓度同样可读。
  */
 :root[data-app-mode="window"][data-window-material="acrylic"]:not(
     [data-material="solid"]

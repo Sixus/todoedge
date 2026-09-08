@@ -18,6 +18,12 @@ import {
 } from "./lib/appMode";
 import { api, type WindowMode } from "./lib/api";
 import {
+  applyPanelOpacity,
+  DEFAULT_PANEL_OPACITY,
+  normalizePanelOpacity,
+  PANEL_OPACITY_SETTING_KEY,
+} from "./lib/opacity";
+import {
   ANIMATIONS_SETTING_KEY,
   applyMaterial,
   MATERIAL_SETTING_KEY,
@@ -65,6 +71,8 @@ function App() {
   const [leaveCollapseMs, setLeaveCollapseMs] = useState(
     DEFAULT_LEAVE_COLLAPSE_MS,
   );
+  // 面板透明度（%）：贴边透明/窗口普通透明/细条共用，CSS 变量即时生效
+  const [panelOpacity, setPanelOpacity] = useState(DEFAULT_PANEL_OPACITY);
   const isTransitioning = useRef(false);
 
   // 外观材质：启动读持久化值（设置视图与面板同文档，改动即时生效，无需跨窗口事件）
@@ -139,6 +147,15 @@ function App() {
           ),
         ),
       )
+      .catch(() => undefined);
+    // 面板透明度：启动恢复并写 CSS 变量（缺失/损坏回默认 70%）
+    void api
+      .getSetting(PANEL_OPACITY_SETTING_KEY)
+      .then((value) => {
+        const percent = normalizePanelOpacity(value);
+        setPanelOpacity(percent);
+        applyPanelOpacity(percent);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -219,6 +236,15 @@ function App() {
       .catch(() => undefined);
   }, []);
 
+  // 面板透明度改动（设置页滑杆）：写 CSS 变量即时生效 + 落库
+  const changePanelOpacity = useCallback((percent: number) => {
+    setPanelOpacity(percent);
+    applyPanelOpacity(percent);
+    void api
+      .setSetting(PANEL_OPACITY_SETTING_KEY, String(percent))
+      .catch(() => undefined);
+  }, []);
+
   // 运行模式切换：落库交给 Rust（含毛玻璃/窗口形态变换），前端先更新
   // data-app-mode 让面板底色立即过渡；展开/收起由 Rust 的 window-mode-changed 事件驱动
   const changeAppMode = useCallback((mode: AppMode) => {
@@ -289,6 +315,8 @@ function App() {
       onChangeAppMode={changeAppMode}
       onChangeHoverExpand={changeHoverExpand}
       onChangeLeaveCollapse={changeLeaveCollapse}
+      panelOpacity={panelOpacity}
+      onChangePanelOpacity={changePanelOpacity}
       error={error}
       highlightTaskId={highlightTaskId}
       isLoading={isLoading}

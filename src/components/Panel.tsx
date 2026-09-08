@@ -33,6 +33,9 @@ interface PanelProps {
   hoverExpandMs: number;
   onChangeHoverExpand: (ms: number) => void;
   onChangeLeaveCollapse: (ms: number) => void;
+  /** 面板透明度（%）：贴边透明/窗口普通透明/细条共用；设置页滑杆编辑 */
+  panelOpacity: number;
+  onChangePanelOpacity: (percent: number) => void;
   /** 图钉固定：固定时屏蔽一切自动收起（移出/点外部/Esc/失焦），全屏强制收回除外 */
   pinned: boolean;
   onTogglePin: () => void;
@@ -71,6 +74,8 @@ export function Panel({
   hoverExpandMs,
   onChangeHoverExpand,
   onChangeLeaveCollapse,
+  panelOpacity,
+  onChangePanelOpacity,
   pinned,
   onTogglePin,
   onChangeAnimations,
@@ -436,6 +441,8 @@ export function Panel({
           leaveCollapseMs={leaveCollapseMs}
           onChangeHoverExpand={onChangeHoverExpand}
           onChangeLeaveCollapse={onChangeLeaveCollapse}
+          panelOpacity={panelOpacity}
+          onChangePanelOpacity={onChangePanelOpacity}
           onChangeAppMode={onChangeAppMode}
           onClose={() => setShowSettings(false)}
         />

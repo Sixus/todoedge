@@ -28,6 +28,10 @@ import {
   type Material,
 } from "../lib/material";
 import {
+  MAX_PANEL_OPACITY,
+  MIN_PANEL_OPACITY,
+} from "../lib/opacity";
+import {
   applyTheme,
   normalizeTheme,
   THEME_SETTING_KEY,
@@ -54,6 +58,9 @@ interface SettingsViewProps {
   leaveCollapseMs: number;
   onChangeHoverExpand: (ms: number) => void;
   onChangeLeaveCollapse: (ms: number) => void;
+  /** 面板透明度（%）：当前值在 App 持有（写 CSS 变量即时生效），滑杆编辑 */
+  panelOpacity: number;
+  onChangePanelOpacity: (percent: number) => void;
   onClose: () => void;
 }
 
@@ -74,6 +81,8 @@ export function SettingsView({
   leaveCollapseMs,
   onChangeHoverExpand,
   onChangeLeaveCollapse,
+  panelOpacity,
+  onChangePanelOpacity,
   onChangeAppMode,
   onClose,
 }: SettingsViewProps) {
@@ -322,6 +331,11 @@ export function SettingsView({
     });
   }, []);
 
+  // 面板透明度滑杆不适用的情况：实体本就不透明；窗口亚克力浓度由系统材质决定
+  const opacitySliderDisabled =
+    material === "solid" ||
+    (appMode === "window" && windowMaterial === "acrylic");
+
   return (
     <div className="settings-overlay">
       <header className="settings-header">
@@ -522,6 +536,32 @@ export function SettingsView({
             实体
           </button>
         </div>
+      </div>
+
+      {/* 面板透明度：贴边透明/窗口普通透明/收起细条共用一个值（App 写 CSS 变量即时生效） */}
+      <div className="settings-row">
+        <div className="settings-text">
+          <p className="settings-label">面板透明度</p>
+          <p className="settings-desc">
+            60%~95%，越大越实，拖动即时生效；实体与窗口亚克力下不适用
+          </p>
+        </div>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <input
+            aria-label="面板透明度（百分比）"
+            className="settings-slider"
+            disabled={opacitySliderDisabled}
+            max={MAX_PANEL_OPACITY}
+            min={MIN_PANEL_OPACITY}
+            onChange={(event) => onChangePanelOpacity(Number(event.target.value))}
+            step="1"
+            type="range"
+            value={panelOpacity}
+          />
+          <span className="w-9 text-right text-[12px] text-[color:var(--fg-muted)]">
+            {panelOpacity}%
+          </span>
+        </span>
       </div>
 
       <div className="settings-row">

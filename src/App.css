@@ -48,13 +48,14 @@ button {
   user-select: none;
 }
 
+/* 悬停/拖动时细条至少提到 0.94 醒目；滑杆调得比它更实时不回落 */
 .edge-strip:hover {
-  opacity: 0.94;
+  opacity: max(var(--strip-opacity), 0.94);
 }
 
 .edge-strip.dragging {
   cursor: grabbing;
-  opacity: 0.94;
+  opacity: max(var(--strip-opacity), 0.94);
 }
 
 /* 清单区滚动条：细化、透明轨道 */
@@ -542,6 +543,20 @@ button {
 
 .settings-number:focus {
   border-color: var(--input-focus);
+}
+
+/* 面板透明度滑杆（60%~95% 无极调节，拖动即时生效） */
+.settings-slider {
+  flex-shrink: 0;
+  width: 120px;
+  height: 28px;
+  accent-color: var(--check-bg);
+  cursor: pointer;
+}
+
+.settings-slider:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .settings-segment {

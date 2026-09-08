@@ -11,7 +11,7 @@ export const DEFAULT_LEAVE_COLLAPSE_MS = 1500;
 
 export const MIN_HOVER_EXPAND_MS = 100;
 export const MAX_HOVER_EXPAND_MS = 2000;
-export const MIN_LEAVE_COLLAPSE_MS = 500;
+export const MIN_LEAVE_COLLAPSE_MS = 100;
 export const MAX_LEAVE_COLLAPSE_MS = 10000;
 
 /** settings 读出的字符串 → 合法毫秒数：非整数回默认，越界钳回边界 */
