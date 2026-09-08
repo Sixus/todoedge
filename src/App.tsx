@@ -241,6 +241,11 @@ function App() {
   // 点通知主体 → 呼出面板并高亮该任务，描边由 TaskItem 持续 2 秒后撤掉
   const clearHighlight = useCallback(() => setHighlightTaskId(null), []);
 
+  // 托盘「打开设置」（M4-3）：监听必须挂在常驻的 App 层——贴边收起时 Panel
+  // 整个卸载，挂在 Panel 上的监听收不到「展开动画期间」发来的事件。
+  // 用信号计数传给 Panel：Panel 挂载后见信号变化即打开设置弹层
+  const [openSettingsSignal, setOpenSettingsSignal] = useState(0);
+
   useEffect(() => {
     const unlisteners = [
       listen<number>("toast-task-done", () => {
@@ -248,6 +253,9 @@ function App() {
       }),
       listen<number>("toast-task-snoozed", () => {
         void reload().catch(() => undefined);
+      }),
+      listen("tray-open-settings", () => {
+        setOpenSettingsSignal((signal) => signal + 1);
       }),
       listen<number>("open_panel_and_highlight", (event) => {
         void expandPanel();
@@ -284,6 +292,7 @@ function App() {
       error={error}
       highlightTaskId={highlightTaskId}
       isLoading={isLoading}
+      openSettingsSignal={openSettingsSignal}
       onAdd={addTask}
       onCollapse={() => void collapsePanel()}
       onChangeAnimations={changeAnimations}

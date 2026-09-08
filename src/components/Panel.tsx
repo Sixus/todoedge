@@ -56,6 +56,8 @@ interface PanelProps {
   /** Toast「点主体」呼出时要求高亮的任务 id（M2-1） */
   highlightTaskId: number | null;
   onHighlightEnd: () => void;
+  /** 托盘「打开设置」信号（M4-3）：App 层监听事件后递增，Panel 见变化即弹设置 */
+  openSettingsSignal: number;
 }
 
 export function Panel({
@@ -82,6 +84,7 @@ export function Panel({
   onEditingChange,
   highlightTaskId,
   onHighlightEnd,
+  openSettingsSignal,
 }: PanelProps) {
   const panelRef = useRef<HTMLElement>(null);
   // 窗口模式无边框：标题栏作为拖动区（data-tauri-drag-region 要落在
@@ -240,16 +243,14 @@ export function Panel({
     };
   }, []);
 
-  // 托盘「打开设置」（M4-3）：Rust 侧已确保面板展开/呼出，这里打开设置弹层
+  // 托盘「打开设置」（M4-3）：信号由常驻的 App 层接收计数（贴边收起时 Panel
+  // 卸载，事件必须在那里等）；面板挂载后见信号变化即打开设置弹层并解锁
   useEffect(() => {
-    const unlisten = listen("tray-open-settings", () => {
+    if (openSettingsSignal > 0) {
       setShowSettings(true);
       setLocked(false);
-    });
-    return () => {
-      void unlisten.then((dispose) => dispose());
-    };
-  }, []);
+    }
+  }, [openSettingsSignal]);
 
   function removeUndoToast(id: number) {
     const timer = undoTimers.current.get(id);
