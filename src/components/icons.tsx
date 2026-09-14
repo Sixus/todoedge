@@ -126,6 +126,15 @@ export function LockIcon({ className }: IconProps) {
   );
 }
 
+/** ⎯ 最小化到托盘（窗口模式底栏，设置按钮右侧）：藏起窗口，托盘/热键唤回 */
+export function MinimizeIcon({ className }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <line x1="6.5" y1="17.5" x2="17.5" y2="17.5" />
+    </svg>
+  );
+}
+
 /** ↻ 重复标记：设了重复规则的任务在提醒时间旁显示（M4-1） */
 export function RepeatIcon({ className }: IconProps) {
   return (

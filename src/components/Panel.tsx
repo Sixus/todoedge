@@ -13,7 +13,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { api, type Completion, type ResizeDirection, type Task } from "../lib/api";
 import type { AppMode } from "../lib/appMode";
 import { formatOverviewDate } from "../lib/format";
-import { CompletedIcon, LockIcon, PinIcon, SettingsIcon } from "./icons";
+import { CompletedIcon, LockIcon, MinimizeIcon, PinIcon, SettingsIcon } from "./icons";
 import { ReportView } from "./ReportView";
 import { SettingsView } from "./SettingsView";
 import { TaskInput } from "./TaskInput";
@@ -573,6 +573,17 @@ export function Panel({
           >
             <SettingsIcon className="h-[18px] w-[18px]" />
           </button>
+          {appMode === "window" ? (
+            <button
+              aria-label="最小化到托盘"
+              className="icon-btn"
+              onClick={() => void api.hideToTray().catch(() => undefined)}
+              title="最小化到托盘"
+              type="button"
+            >
+              <MinimizeIcon className="h-[18px] w-[18px]" />
+            </button>
+          ) : null}
         </div>
       </footer>
         </>

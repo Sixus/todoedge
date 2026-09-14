@@ -2,6 +2,7 @@
 //!
 //! 规格见 docs/01 第 4.2 节：标题「待办提醒」+ 任务标题正文（过期附分钟数），
 //! 按钮 [完成] [稍后提醒]，点主体呼出面板；声音用系统默认。
+//! 另承载窗口模式「最小化到托盘」的首次提示（无按钮，2026-09-14）。
 //!
 //! 关键机制（docs/02 第 8 节风险 1）：只有通知对象在应用进程内保持存活，
 //! activated/dismissed 回调才会在本进程触发。因此本模块用一条常驻线程持有
@@ -21,8 +22,16 @@ pub struct ToastTask {
     pub overdue_minutes: Option<i64>,
 }
 
+/// 通知线程的消息：任务提醒 / 窗口模式「最小化到托盘」的首次提示
+enum ToastMessage {
+    Task(ToastTask),
+    TrayHint,
+}
+
 #[cfg(windows)]
 pub use imp::show_toast;
+#[cfg(windows)]
+pub use imp::show_tray_hint;
 #[cfg(windows)]
 pub use imp::start;
 
@@ -31,6 +40,9 @@ pub fn start(_app: AppHandle) {}
 
 #[cfg(not(windows))]
 pub fn show_toast(_task: ToastTask) {}
+
+#[cfg(not(windows))]
+pub fn show_tray_hint() {}
 
 #[cfg(windows)]
 mod imp {
@@ -51,7 +63,7 @@ mod imp {
         ToastNotificationManager, ToastNotifier,
     };
 
-    use super::ToastTask;
+    use super::{ToastMessage, ToastTask};
     use crate::db::Db;
 
     /// 应用用户模型 ID：非打包 Win32 应用弹 Toast 的前提是 AUMID 已注册。
@@ -72,11 +84,11 @@ mod imp {
     const KEEP_ALIVE_CAP: usize = 32;
     const KEEP_ALIVE_TTL: Duration = Duration::from_secs(2 * 60 * 60);
 
-    static SENDER: OnceLock<mpsc::Sender<ToastTask>> = OnceLock::new();
+    static SENDER: OnceLock<mpsc::Sender<ToastMessage>> = OnceLock::new();
 
     /// 启动常驻通知线程；setup 阶段调用一次，须晚于 Db manage（回调要用）。
     pub fn start(app: AppHandle) {
-        let (tx, rx) = mpsc::channel::<ToastTask>();
+        let (tx, rx) = mpsc::channel::<ToastMessage>();
         if SENDER.set(tx).is_err() {
             return; // 已启动过
         }
@@ -90,13 +102,22 @@ mod imp {
 
     /// 投递一条提醒给通知线程（非阻塞；展示失败在线程内记日志）。
     pub fn show_toast(task: ToastTask) {
+        send(ToastMessage::Task(task));
+    }
+
+    /// 投递「已最小化到托盘」提示给通知线程（非阻塞）。
+    pub fn show_tray_hint() {
+        send(ToastMessage::TrayHint);
+    }
+
+    fn send(message: ToastMessage) {
         match SENDER.get() {
             Some(tx) => {
-                if let Err(e) = tx.send(task) {
+                if let Err(e) = tx.send(message) {
                     eprintln!("投递通知失败：{e}");
                 }
             }
-            None => eprintln!("通知线程未启动，丢弃任务 {} 的提醒", task.id),
+            None => eprintln!("通知线程未启动，丢弃通知"),
         }
     }
 
@@ -118,7 +139,7 @@ mod imp {
         _toast: Arc<ToastNotification>,
     }
 
-    fn run(app: AppHandle, rx: mpsc::Receiver<ToastTask>) {
+    fn run(app: AppHandle, rx: mpsc::Receiver<ToastMessage>) {
         unsafe {
             // WinRT 调用要求线程初始化 COM；本线程独占 MTA，随进程退出回收
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
@@ -136,10 +157,19 @@ mod imp {
             };
         let live: LiveToasts = Arc::new(Mutex::new(Vec::new()));
 
-        while let Ok(task) = rx.recv() {
+        while let Ok(message) = rx.recv() {
             prune(&live);
-            if let Err(e) = show(&notifier, &live, &app, &task) {
-                eprintln!("任务 {} 弹通知失败：{e}", task.id);
+            match message {
+                ToastMessage::Task(task) => {
+                    if let Err(e) = show(&notifier, &live, &app, &task) {
+                        eprintln!("任务 {} 弹通知失败：{e}", task.id);
+                    }
+                }
+                ToastMessage::TrayHint => {
+                    if let Err(e) = show_hint(&notifier, &live, &app) {
+                        eprintln!("最小化提示弹通知失败：{e}");
+                    }
+                }
             }
         }
     }
@@ -171,20 +201,67 @@ mod imp {
             },
         ))?;
 
-        // 被 dismiss（用户关闭/超时）后对象可以释放
+        // 被 dismiss（用户关闭/超时）或展示失败后对象可以释放；label 用于失败日志
+        attach_lifecycle(&toast, live, task.id, format!("任务 {}", task.id))?;
+        notifier.Show(&toast)?;
+        live.lock().expect("Toast 存活表锁已损坏").push(LiveToast {
+            task_id: task.id,
+            shown_at: Instant::now(),
+            _toast: Arc::new(toast),
+        });
+        Ok(())
+    }
+
+    /// 展示「已最小化到托盘」提示（2026-09-14，窗口模式底栏按钮首次触发）：
+    /// 无按钮、不写 launch，点主体时激活参数为空，route_activated 兜底按
+    /// Open 处理（id 0 不是任何任务，前端只呼出面板不高亮）——藏起来的
+    /// 窗口点这条通知也能唤回。存活表用 0 占位，任务表自增 id 从 1 起，
+    /// 不会与真任务混用。
+    fn show_hint(
+        notifier: &ToastNotifier,
+        live: &LiveToasts,
+        app: &AppHandle,
+    ) -> windows::core::Result<()> {
+        let xml = XmlDocument::new()?;
+        xml.LoadXml(&HSTRING::from(hint_xml()))?;
+        let toast = ToastNotification::CreateToastNotification(&xml)?;
+
+        let activated_app = app.clone();
+        toast.Activated(&TypedEventHandler::<ToastNotification, IInspectable>::new(
+            move |_, _| {
+                route_activated(&activated_app, 0, "");
+                Ok(())
+            },
+        ))?;
+
+        attach_lifecycle(&toast, live, 0, "最小化提示".to_string())?;
+        notifier.Show(&toast)?;
+        live.lock().expect("Toast 存活表锁已损坏").push(LiveToast {
+            task_id: 0,
+            shown_at: Instant::now(),
+            _toast: Arc::new(toast),
+        });
+        Ok(())
+    }
+
+    /// 登记 dismiss/失败回调：从存活表移除，Toast 对象（及其回调）随之可释放。
+    /// Weak 引用避免「对象→回调→表→对象」循环。
+    fn attach_lifecycle(
+        toast: &ToastNotification,
+        live: &LiveToasts,
+        task_id: i64,
+        label: String,
+    ) -> windows::core::Result<()> {
         let dismissed_live = Arc::downgrade(live);
-        let dismissed_task_id = task.id;
         toast.Dismissed(&TypedEventHandler::<
             ToastNotification,
             ToastDismissedEventArgs,
         >::new(move |_, _| {
-            forget_toast(&dismissed_live, dismissed_task_id);
+            forget_toast(&dismissed_live, task_id);
             Ok(())
         }))?;
 
-        // 展示失败：记录原因并释放对象
         let failed_live = Arc::downgrade(live);
-        let failed_task_id = task.id;
         toast.Failed(
             &TypedEventHandler::<ToastNotification, ToastFailedEventArgs>::new(move |_, args| {
                 let code = args
@@ -193,17 +270,11 @@ mod imp {
                     .and_then(|event| event.ErrorCode().ok())
                     .map(|code| code.to_string())
                     .unwrap_or_default();
-                eprintln!("任务 {} 的 Toast 展示失败：{code}", failed_task_id);
-                forget_toast(&failed_live, failed_task_id);
+                eprintln!("{label} 的 Toast 展示失败：{code}");
+                forget_toast(&failed_live, task_id);
                 Ok(())
             }),
         )?;
-        notifier.Show(&toast)?;
-        live.lock().expect("Toast 存活表锁已损坏").push(LiveToast {
-            task_id: task.id,
-            shown_at: Instant::now(),
-            _toast: Arc::new(toast),
-        });
         Ok(())
     }
 
@@ -362,6 +433,13 @@ mod imp {
         )
     }
 
+    /// 「已最小化到托盘」提示 XML：标题 + 说明正文，无按钮、无 launch。
+    fn hint_xml() -> &'static str {
+        r#"<toast>
+  <visual><binding template="ToastGeneric"><text>已最小化到托盘</text><text>点击任务栏右下角托盘里的 TodoEdge 图标即可重新打开</text></binding></visual>
+</toast>"#
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -394,6 +472,15 @@ mod imp {
         fn 未过期任务不显示过期行() {
             let xml = toast_xml(&task(1, "刚到点", None));
             assert!(!xml.contains("已过期"));
+        }
+
+        #[test]
+        fn 托盘提示只有标题正文无按钮() {
+            let xml = hint_xml();
+            assert!(xml.contains("<text>已最小化到托盘</text>"));
+            assert!(xml.contains("TodoEdge"));
+            assert!(!xml.contains("<actions>"));
+            assert!(!xml.contains("launch="));
         }
 
         #[test]

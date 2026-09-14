@@ -96,6 +96,8 @@ export const api = {
     invoke<WindowMaterial>("set_window_material", { material }),
   /** 底栏锁头：立即上锁（Rust 广播 panel-lock 事件，面板锁屏统一处理） */
   lockPanel: () => invoke<void>("lock_panel"),
+  /** 窗口模式最小化到托盘：藏起主窗口（任务栏不显示），托盘/热键/通知点击唤回 */
+  hideToTray: () => invoke<void>("hide_to_tray"),
   /** 设置：失焦自动上锁开关 */
   setAutoLockEnabled: (enabled: boolean) =>
     invoke<void>("set_auto_lock_enabled", { enabled }),

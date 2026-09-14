@@ -96,6 +96,7 @@ pub fn run() {
             window_ctl::set_app_mode,
             window_ctl::set_window_material,
             window_ctl::lock_panel,
+            window_ctl::hide_to_tray,
             window_ctl::set_auto_lock_enabled,
             window_ctl::set_auto_lock_minutes,
         ])

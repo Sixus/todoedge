@@ -10,6 +10,7 @@ use serde::Serialize;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Monitor, State, WebviewWindow};
 
 use crate::db::{self, Db};
+use crate::toast;
 
 // 高度：收起细条 = 屏高 35%；展开面板同为屏高 35%，但不得低于 MIN_PANEL_HEIGHT
 // （两者解绑，2026-09-05 用户确认：细条保持纤细，加高只加在展开面板上）
@@ -38,6 +39,8 @@ pub const APP_MODE_SETTING_KEY: &str = "app_mode";
 /// 只渲染黑底、拖动中被禁用且严重掉帧（实体机反馈 2026-09-04），启动时
 /// 自动按亚克力处理。
 pub const WINDOW_MATERIAL_SETTING_KEY: &str = "window_material";
+/// settings 键：窗口模式「最小化到托盘」首次提示是否已弹过（"1" = 已弹）
+pub const TRAY_HINT_SHOWN_KEY: &str = "tray_hint_shown";
 
 /// 窗口模式背景材质。系统亚克力（Win11 DWM SystemBackdrop，微信同款实时
 /// 模糊）为默认；普通透明为纯逐像素透色，用于云电脑/远程桌面等不支持
@@ -654,6 +657,38 @@ pub fn set_panel_pinned(
     if state.app_mode() == AppShellMode::Window {
         let _ = window.set_always_on_top(pinned);
     }
+}
+
+/// 窗口模式「最小化到托盘」（底栏按钮，2026-09-14）：藏起主窗口，任务栏
+/// 按钮随窗口隐藏一并消失（窗口模式未启用贴边的 skip_taskbar 样式，无需
+/// 额外处理）。唤起走既有路径：托盘左键/菜单、全局热键、提醒通知点击
+/// （内部都含 show）。仅首次弹系统通知提示去向，settings 记住后不再弹。
+#[tauri::command]
+pub fn hide_to_tray(
+    window: WebviewWindow,
+    db: State<'_, Db>,
+    state: State<'_, Arc<WindowCtlState>>,
+) -> Result<(), String> {
+    // 按钮只在窗口模式渲染，这里再挡一层：贴边模式误调用不应藏起细条
+    if state.app_mode() != AppShellMode::Window {
+        return Ok(());
+    }
+    let first_time = {
+        let conn = db.0.lock().map_err(|error| error.to_string())?;
+        let shown = db::setting_get(&conn, TRAY_HINT_SHOWN_KEY)
+            .map_err(|error| error.to_string())?
+            .is_some_and(|value| value == "1");
+        if !shown {
+            db::setting_set(&conn, TRAY_HINT_SHOWN_KEY, "1")?;
+        }
+        !shown
+    };
+    // 先藏窗口再弹提示：用户看到的是「窗口消失 → 通知解释去向」
+    window.hide().map_err(|error| error.to_string())?;
+    if first_time {
+        toast::show_tray_hint();
+    }
+    Ok(())
 }
 
 /// 拖动细条（M3-4）：前端把指针位移增量（逻辑像素）发过来，换算成比例更新
