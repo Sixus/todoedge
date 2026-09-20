@@ -13,6 +13,14 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // 单实例保护（须最先注册）：再次启动不开第二份，唤起既有主窗口——
+        // 与托盘左键同一路径：窗口模式先修几何再呼出聚焦，贴边模式展开面板
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let state = app.state::<Arc<window_ctl::WindowCtlState>>();
+                let _ = window_ctl::expand_panel(window, state);
+            }
+        }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
