@@ -1,8 +1,9 @@
 [package]
 name = "todoedge"
 version = "1.5.2"
-description = "A Tauri App"
-authors = ["you"]
+description = "贴边常驻的极简 Windows 桌面待办"
+authors = ["SixH"]
+license = "MIT"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
