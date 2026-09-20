@@ -9,9 +9,9 @@
 use std::sync::Arc;
 
 use tauri::{
-    AppHandle, Emitter, Manager,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Emitter, Manager,
 };
 
 use crate::window_ctl::{self, AppShellMode, WindowCtlState};

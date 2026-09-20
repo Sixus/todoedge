@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use tauri_plugin_autostart::ManagerExt;
 
-use crate::{db::{self, Db}, window_ctl::WindowCtlState};
+use crate::{
+    db::{self, Db},
+    window_ctl::WindowCtlState,
+};
 
 /// 传给前端的任务结构：camelCase 字段，时间一律 RFC3339 字符串（UTC）。
 /// Deserialize 供撤销删除回传快照用（restore_task）。
@@ -57,9 +60,7 @@ fn remind_at_is_past(remind_at: &str) -> bool {
 /// 没有提醒时间的任务不允许重复——重复跟随提醒时间，无锚点谈不上周期。
 fn normalize_repeat(repeat: Option<&str>, remind_at: Option<&str>) -> String {
     match repeat {
-        Some(kind @ ("daily" | "weekly" | "monthly")) if remind_at.is_some() => {
-            kind.to_string()
-        }
+        Some(kind @ ("daily" | "weekly" | "monthly")) if remind_at.is_some() => kind.to_string(),
         _ => "none".to_string(),
     }
 }
@@ -328,9 +329,11 @@ pub fn update_task(
     if let Some(repeat) = repeat {
         // 顺延锚点看改完之后的提醒时间（同一次调用里先改时间再改重复）
         let remind_at_now: Option<String> = conn
-            .query_row("SELECT remind_at FROM tasks WHERE id = ?1", params![id], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT remind_at FROM tasks WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
             .map_err(|e| e.to_string())?;
         let repeat = normalize_repeat(Some(&repeat), remind_at_now.as_deref());
         conn.execute(
@@ -467,7 +470,9 @@ pub fn exit_app(app: AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{advance_repeat_from, complete_task, normalize_repeat, remind_at_is_past, uncomplete_task};
+    use super::{
+        advance_repeat_from, complete_task, normalize_repeat, remind_at_is_past, uncomplete_task,
+    };
     use chrono::{DateTime, Utc};
     use rusqlite::{params, Connection};
 
@@ -480,12 +485,7 @@ mod tests {
         conn
     }
 
-    fn insert_task(
-        conn: &Connection,
-        title: &str,
-        remind_at: Option<&str>,
-        repeat: &str,
-    ) -> i64 {
+    fn insert_task(conn: &Connection, title: &str, remind_at: Option<&str>, repeat: &str) -> i64 {
         conn.execute(
             "INSERT INTO tasks (title, remind_at, repeat, created_at) VALUES (?1, ?2, ?3, ?4)",
             params![title, remind_at, repeat, "2026-09-01T00:00:00Z"],
@@ -520,10 +520,10 @@ mod tests {
     #[test]
     fn 生来过期判断() {
         use chrono::SecondsFormat;
-        let past = (Utc::now() - chrono::Duration::minutes(5))
-            .to_rfc3339_opts(SecondsFormat::Secs, true);
-        let future = (Utc::now() + chrono::Duration::minutes(5))
-            .to_rfc3339_opts(SecondsFormat::Secs, true);
+        let past =
+            (Utc::now() - chrono::Duration::minutes(5)).to_rfc3339_opts(SecondsFormat::Secs, true);
+        let future =
+            (Utc::now() + chrono::Duration::minutes(5)).to_rfc3339_opts(SecondsFormat::Secs, true);
         // 前端可能传带毫秒的 ISO 字符串
         let past_with_millis = (Utc::now() - chrono::Duration::minutes(1))
             .to_rfc3339_opts(SecondsFormat::Millis, true);
@@ -624,9 +624,11 @@ mod tests {
         assert_eq!(completions_count(&conn, id), 1);
         // 新卡：同标题同规则，origin 指回旧卡，提醒在未来
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM tasks WHERE origin_id = ?1", params![id], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM tasks WHERE origin_id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(count, 1);
         let (title, remind_at, repeat, notified): (String, Option<String>, String, i64) = conn
@@ -639,7 +641,9 @@ mod tests {
         assert_eq!(title, "喝水");
         assert_eq!(repeat, "daily");
         assert_eq!(notified, 0);
-        let next: DateTime<Utc> = DateTime::parse_from_rfc3339(&remind_at.unwrap()).unwrap().into();
+        let next: DateTime<Utc> = DateTime::parse_from_rfc3339(&remind_at.unwrap())
+            .unwrap()
+            .into();
         assert!(next > Utc::now());
     }
 
@@ -653,9 +657,11 @@ mod tests {
         assert!(task.done_at.is_none());
         assert_eq!(completions_count(&conn, id), 0);
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM tasks WHERE origin_id = ?1", params![id], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM tasks WHERE origin_id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(count, 0);
     }
@@ -668,9 +674,11 @@ mod tests {
         assert_eq!(task.done, true);
         assert_eq!(completions_count(&conn, id), 1);
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM tasks WHERE origin_id = ?1", params![id], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM tasks WHERE origin_id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(count, 0);
         let undone = uncomplete_task(&conn, id).unwrap();
@@ -685,9 +693,11 @@ mod tests {
         let task = complete_task(&conn, id).unwrap();
         assert_eq!(task.done, true);
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM tasks WHERE origin_id = ?1", params![id], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM tasks WHERE origin_id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(count, 0);
     }
@@ -698,13 +708,21 @@ mod tests {
         let id = insert_task(&conn, "喝水", Some("2020-01-01T09:00:00Z"), "daily");
         complete_task(&conn, id).unwrap();
         let child: i64 = conn
-            .query_row("SELECT id FROM tasks WHERE origin_id = ?1", params![id], |r| r.get(0))
+            .query_row(
+                "SELECT id FROM tasks WHERE origin_id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
             .unwrap();
         // 新卡也被勾掉（生成第三代）后勾回第一代：只撤第一代的记录，不删已结算的第二代
         complete_task(&conn, child).unwrap();
         uncomplete_task(&conn, id).unwrap();
         let done: i64 = conn
-            .query_row("SELECT done FROM tasks WHERE id = ?1", params![child], |r| r.get(0))
+            .query_row(
+                "SELECT done FROM tasks WHERE id = ?1",
+                params![child],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(done, 1);
         assert_eq!(completions_count(&conn, id), 0);

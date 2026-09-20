@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU8, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering},
         Arc, Mutex, OnceLock,
     },
     time::Duration,
@@ -226,7 +226,8 @@ impl WindowCtlState {
     }
 
     pub fn set_window_material_value(&self, material: WindowMaterial) {
-        self.window_material.store(material.as_u8(), Ordering::Release);
+        self.window_material
+            .store(material.as_u8(), Ordering::Release);
     }
 
     /// 图钉状态启动恢复（前端稍后会经 set_panel_pinned 再同步一次）
@@ -454,7 +455,7 @@ fn is_window_shrunken(window: &WebviewWindow) -> bool {
     let (Ok(scale), Ok(size)) = (window.scale_factor(), window.outer_size()) else {
         return false;
     };
-    if !(scale > 0.0) {
+    if scale.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
         return false;
     }
     size.width as f64 / scale < WINDOW_MODE_MIN_WIDTH
@@ -535,7 +536,7 @@ pub fn focus_window(window: &WebviewWindow) -> Result<(), String> {
 #[cfg(windows)]
 fn set_system_backdrop(window: &WebviewWindow, enable: bool) -> bool {
     use windows::Win32::Graphics::Dwm::{
-        DwmSetWindowAttribute, DWMWA_SYSTEMBACKDROP_TYPE, DWMSBT_NONE, DWMSBT_TRANSIENTWINDOW,
+        DwmSetWindowAttribute, DWMSBT_NONE, DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE,
         DWM_SYSTEMBACKDROP_TYPE,
     };
 
@@ -735,7 +736,10 @@ fn expand_inner(window: &WebviewWindow, state: &Arc<WindowCtlState>) -> Result<W
     set_mode(window, state, WindowMode::Expanded, true)
 }
 
-fn collapse_inner(window: &WebviewWindow, state: &Arc<WindowCtlState>) -> Result<WindowMode, String> {
+fn collapse_inner(
+    window: &WebviewWindow,
+    state: &Arc<WindowCtlState>,
+) -> Result<WindowMode, String> {
     if state.app_mode() == AppShellMode::Window {
         // 窗口模式是普通窗口：移出/点外部/Esc/失焦等自动收起一律不生效
         return Ok(WindowMode::Expanded);
@@ -927,13 +931,12 @@ pub fn load_app_mode(db: &Db) -> AppShellMode {
 /// 1.2.0-beta 首版默认「毛玻璃」，实体机实测 Win11 上只剩黑色底、拖动中
 /// 失效且严重掉帧，故把存量 "blur" 自动迁移为系统亚克力。
 pub fn load_window_material(db: &Db) -> WindowMaterial {
-    let stored = db
-        .0
-        .lock()
-        .map_err(|_| ())
-        .ok()
-        .and_then(|conn| db::setting_get(&conn, WINDOW_MATERIAL_SETTING_KEY).ok())
-        .flatten();
+    let stored =
+        db.0.lock()
+            .map_err(|_| ())
+            .ok()
+            .and_then(|conn| db::setting_get(&conn, WINDOW_MATERIAL_SETTING_KEY).ok())
+            .flatten();
     if matches!(stored.as_deref(), Some("blur")) {
         if let Ok(conn) = db.0.lock() {
             let _ = db::setting_set(&conn, WINDOW_MATERIAL_SETTING_KEY, "acrylic");

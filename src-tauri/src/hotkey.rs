@@ -69,8 +69,8 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<Wry> {
 
 /// 解析并注册热键，成功才记为当前热键；注册失败原样返回 Err（旧热键不动）
 fn apply_hotkey(app: &AppHandle, state: &HotkeyState, hotkey: &str) -> Result<Shortcut, String> {
-    let shortcut =
-        Shortcut::from_str(hotkey).map_err(|error| format!("无法识别的热键「{hotkey}」：{error}"))?;
+    let shortcut = Shortcut::from_str(hotkey)
+        .map_err(|error| format!("无法识别的热键「{hotkey}」：{error}"))?;
     if state.current() == Some(shortcut) {
         return Ok(shortcut);
     }
@@ -95,12 +95,14 @@ pub fn init(app: &AppHandle) {
             Ok(conn) => conn,
             Err(_) => return,
         };
-        db::setting_get(&conn, HOTKEY_SETTING_KEY)
-            .ok()
-            .flatten()
+        db::setting_get(&conn, HOTKEY_SETTING_KEY).ok().flatten()
     };
     let state = app.state::<HotkeyState>();
-    let _ = apply_hotkey(app, &state, &saved.unwrap_or_else(|| DEFAULT_HOTKEY.to_string()));
+    let _ = apply_hotkey(
+        app,
+        &state,
+        &saved.unwrap_or_else(|| DEFAULT_HOTKEY.to_string()),
+    );
 }
 
 /// 设置新热键（前端录入）：注册成功才落库并回显；失败返回 Err 且旧热键保持
