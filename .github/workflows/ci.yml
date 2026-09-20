@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 前端依赖与构建（产物供 Tauri 编译使用）
+        run: |
+          npm ci
+          npm run build
+
+      - name: Rust 格式检查
+        run: cargo fmt --check
+        working-directory: src-tauri
+
+      - name: Rust 静态检查（clippy 零警告）
+        run: cargo clippy -- -D warnings
+        working-directory: src-tauri
+
+      - name: Rust 测试
+        run: cargo test
+        working-directory: src-tauri
