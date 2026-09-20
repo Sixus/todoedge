@@ -73,12 +73,14 @@ fn toggle_panel(app: &AppHandle) {
         return;
     };
     if state.app_mode() == AppShellMode::Window {
-        // 窗口模式：显示↔隐藏切换；呼出时聚焦以便直接操作
+        // 窗口模式：显示↔隐藏切换；呼出统一走 focus_window——显示前先确保
+        // 窗口在屏幕可视范围内（睡眠/换屏可能把它留在不存在的屏幕区域，
+        // 直接 show 表现就是「点了没反应」，真机反馈 2026-09-16）
         let visible = window.is_visible().unwrap_or(false);
         let result = if visible {
-            window.hide()
+            window.hide().map_err(|e| e.to_string())
         } else {
-            window.show().and_then(|_| window.set_focus())
+            window_ctl::focus_window(&window)
         };
         if let Err(e) = result {
             eprintln!("托盘切换窗口面板失败：{e}");
@@ -99,7 +101,8 @@ fn open_settings(app: &AppHandle) {
     };
     if state.app_mode() == AppShellMode::Window {
         if !window.is_visible().unwrap_or(false) {
-            if let Err(e) = window.show().and_then(|_| window.set_focus()) {
+            // 呼出同 toggle_panel：先确保在屏内再显示聚焦
+            if let Err(e) = window_ctl::focus_window(&window) {
                 eprintln!("托盘呼出面板失败：{e}");
             }
         }

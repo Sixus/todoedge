@@ -1,16 +1,21 @@
 use std::{
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU8, AtomicU64, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
     },
     time::Duration,
 };
 
 use serde::Serialize;
-use tauri::{Emitter, LogicalPosition, LogicalSize, Monitor, State, WebviewWindow};
+use tauri::{
+    Emitter, LogicalPosition, LogicalSize, Monitor, PhysicalPosition, State, WebviewWindow,
+};
 
 use crate::db::{self, Db};
 use crate::toast;
+
+#[cfg(windows)]
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 
 // 高度：收起细条 = 屏高 35%；展开面板同为屏高 35%，但不得低于 MIN_PANEL_HEIGHT
 // （两者解绑，2026-09-05 用户确认：细条保持纤细，加高只加在展开面板上）
@@ -21,6 +26,9 @@ const EXPANDED_HEIGHT_RATIO: f64 = 0.35;
 /// 展开面板/窗口模式的最低高度（逻辑像素）：提醒/编辑弹层固定高 430/470px，
 /// 加上下留白取整；窗口矮于该值时弹层超出窗口部分直接不可见（用户反馈截图）。
 const MIN_PANEL_HEIGHT: f64 = 500.0;
+/// 窗口模式的最小宽度（逻辑像素，enter_window_mode 的 set_min_size 同值）：
+/// 弹层宽 264px 装得下。
+const WINDOW_MODE_MIN_WIDTH: f64 = 280.0;
 
 /// 展开态高度：屏高 35% 与最低高度取大——小屏（35% 只有两三百像素）也能完整装下弹层
 fn expanded_height(monitor_height: f64) -> f64 {
@@ -159,6 +167,8 @@ pub struct WindowCtlState {
     auto_lock_minutes: AtomicU32,
     /// 自动上锁计时代数：聚焦/改设置/手动上锁都会自增，作废挂起的计时线程
     lock_generation: AtomicU64,
+    /// 显示环境变化重贴的防抖代数：连发系统消息（改分辨率会连续触发）只响应最后一次
+    reseat_generation: AtomicU64,
 }
 
 impl Default for WindowCtlState {
@@ -177,6 +187,7 @@ impl Default for WindowCtlState {
             auto_lock_enabled: AtomicBool::new(true),
             auto_lock_minutes: AtomicU32::new(1),
             lock_generation: AtomicU64::new(0),
+            reseat_generation: AtomicU64::new(0),
         }
     }
 }
@@ -381,8 +392,139 @@ fn window_mode_geometry(monitor: Monitor) -> WindowGeometry {
     }
 }
 
-/// 窗口模式的「呼出」：置前并聚焦（窗口模式可激活，不再用 SW_SHOWNOACTIVATE）。
-fn focus_window(window: &WebviewWindow) -> Result<(), String> {
+/// 窗口是否已完全跑出所有显示器的可视范围（物理像素矩形零相交）。
+/// 部分出屏不算——用户把窗口拖到屏幕边缘留一半在外是合法摆法。
+/// 睡眠唤醒、拔插显示器、改分辨率后，窗口可能被留在已不存在的屏幕
+/// 区域（真机反馈 2026-09-16：托盘点不出来、Alt+Tab 切不过去）。
+fn is_window_offscreen(window: &WebviewWindow) -> bool {
+    let (Ok(position), Ok(size)) = (window.outer_position(), window.outer_size()) else {
+        return false;
+    };
+    let Ok(monitors) = window.available_monitors() else {
+        return false;
+    };
+    let (left, top) = (position.x, position.y);
+    let (right, bottom) = (
+        position.x + size.width as i32,
+        position.y + size.height as i32,
+    );
+    !monitors.iter().any(|monitor| {
+        let origin = monitor.position();
+        let extent = monitor.size();
+        right > origin.x
+            && left < origin.x + extent.width as i32
+            && bottom > origin.y
+            && top < origin.y + extent.height as i32
+    })
+}
+
+/// 窗口模式拉回主屏中央：保持用户调整过的尺寸，只挪位置；物理像素直算，
+/// 避免跨屏 DPI 不同导致的逻辑换算偏差（这里只求「看得见」，不追求精确居中）。
+fn pull_back_to_primary_center(window: &WebviewWindow) -> Result<(), String> {
+    let monitor = window
+        .primary_monitor()
+        .map_err(|error| error.to_string())?
+        .ok_or("未找到主显示器")?;
+    let origin = monitor.position();
+    let extent = monitor.size();
+    let size = window.outer_size().map_err(|error| error.to_string())?;
+    window
+        .set_position(PhysicalPosition::new(
+            origin.x + (extent.width as i32 - size.width as i32) / 2,
+            origin.y + (extent.height as i32 - size.height as i32) / 2,
+        ))
+        .map_err(|error| error.to_string())
+}
+
+/// 「呼出必可见」：窗口若已跑出所有屏幕（睡眠/换屏遗留），先拉回主屏中央。
+/// 托盘、全局热键、提醒通知的窗口模式唤回路径统一经过这里。
+pub fn ensure_on_screen(window: &WebviewWindow) {
+    if is_window_offscreen(window) {
+        if let Err(e) = pull_back_to_primary_center(window) {
+            eprintln!("窗口拉回主屏失败：{e}");
+        }
+    }
+}
+
+/// 窗口模式的窗口是否被压扁：宽或高低于最小合法尺寸（280×500 逻辑像素）。
+/// set_min_size 只拦得住用户手动拖拽，拦不住系统在息屏/唤醒、显示器重排时
+/// 对窗口几何的改写（真机反馈 2026-09-16 二次反馈：自动息屏唤醒后窗口缩成
+/// 一条小胶囊，只剩锁屏按钮可见）。仅窗口模式语义——贴边细条本来就 6px 宽。
+fn is_window_shrunken(window: &WebviewWindow) -> bool {
+    let (Ok(scale), Ok(size)) = (window.scale_factor(), window.outer_size()) else {
+        return false;
+    };
+    if !(scale > 0.0) {
+        return false;
+    }
+    size.width as f64 / scale < WINDOW_MODE_MIN_WIDTH
+        || size.height as f64 / scale < MIN_PANEL_HEIGHT
+}
+
+/// 窗口模式几何修复（呼出/自动归位/自愈共用）：被压扁 → 整个重置回默认
+/// 几何（主屏居中，与「每次进入窗口模式都回默认尺寸」的产品语义一致）；
+/// 尺寸正常但停在屏幕外 → 只挪位置，尊重用户自己摆的位置和大小。
+fn restore_window_mode_geometry(window: &WebviewWindow) {
+    if is_window_shrunken(window) {
+        if let Ok(Some(monitor)) = window.primary_monitor() {
+            let geometry = window_mode_geometry(monitor);
+            if let Err(e) = window.set_size(geometry.size) {
+                eprintln!("窗口恢复默认尺寸失败：{e}");
+            }
+            if let Err(e) = window.set_position(geometry.position) {
+                eprintln!("窗口恢复默认位置失败：{e}");
+            }
+            return;
+        }
+    }
+    ensure_on_screen(window);
+}
+
+/// 显示环境变化（分辨率/显示器插拔/缩放变化/睡眠唤醒）后的重贴位：
+/// 延迟半秒等屏幕配置稳定再动，防抖只响应连发消息的最后一次。
+/// 窗口模式尊重用户自由摆放的位置，仅在窗口跑出所有屏幕时拉回；
+/// 贴边模式位置本就由程序管理，直接按当前状态重贴主屏右缘，并补上
+/// 此前「唤醒瞬间显示器未就绪导致重新显示失败被吞掉」的缺口——
+/// 窗口若还藏着（非全屏期间）一并显示回来。
+fn reseat_after_display_change(window: WebviewWindow, state: Arc<WindowCtlState>) {
+    let generation = state.reseat_generation.fetch_add(1, Ordering::AcqRel) + 1;
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(500));
+        if state.reseat_generation.load(Ordering::Acquire) != generation {
+            return;
+        }
+        match state.app_mode() {
+            AppShellMode::Window => {
+                // 隐藏中的窗口不动（用户自己藏的），呼出时 restore 几何兜
+                if window.is_visible().unwrap_or(false) {
+                    restore_window_mode_geometry(&window);
+                }
+            }
+            AppShellMode::Edge => {
+                // 全屏应用覆盖期间窗口本就应保持隐藏
+                if state.is_fullscreen.load(Ordering::Acquire) {
+                    return;
+                }
+                let mode = *state
+                    .mode
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if apply_geometry(&window, mode, state.strip_center_ratio()).is_ok()
+                    && !window.is_visible().unwrap_or(true)
+                {
+                    let _ = show_without_activation(&window);
+                }
+            }
+        }
+    });
+}
+
+/// 窗口模式的「呼出」：先修复窗口几何（息屏/睡眠可能把它压扁或留在不存在
+/// 的屏幕区域，直接 show 就是「点了没反应」或缩成小胶囊），再置前聚焦
+/// （窗口模式可激活，不再用 SW_SHOWNOACTIVATE）。托盘左键/菜单、全局热键、
+/// 提醒通知点击都走这一条路。
+pub fn focus_window(window: &WebviewWindow) -> Result<(), String> {
+    restore_window_mode_geometry(window);
     window.show().map_err(|error| error.to_string())?;
     window.set_focus().map_err(|error| error.to_string())
 }
@@ -544,7 +686,10 @@ fn enter_window_mode(window: &WebviewWindow, state: &Arc<WindowCtlState>) -> Res
         .set_resizable(true)
         .map_err(|error| error.to_string())?;
     window
-        .set_min_size(Some(LogicalSize::new(280.0, MIN_PANEL_HEIGHT)))
+        .set_min_size(Some(LogicalSize::new(
+            WINDOW_MODE_MIN_WIDTH,
+            MIN_PANEL_HEIGHT,
+        )))
         .map_err(|error| error.to_string())?;
     let monitor = window
         .primary_monitor()
@@ -1041,6 +1186,82 @@ fn pointer_is_outside_window(_: &WebviewWindow) -> Result<bool, String> {
     Ok(false)
 }
 
+/// 睡眠唤醒电源事件（WM_POWERBROADCAST 的 wParam 值）：PBT_APMRESUME（用户
+/// 按电源键唤醒）、PBT_APMRESUMEAUTOMATIC（自动唤醒）。用字面量 + 注释注明
+/// 出处，避免仅为两个常量开启 windows crate 的新 feature（Win32_System_Power）。
+#[cfg(windows)]
+const PBT_APMRESUME: usize = 0x0000_0007;
+#[cfg(windows)]
+const PBT_APMRESUMEAUTOMATIC: usize = 0x0000_0012;
+
+/// 子类化实例 id（SetWindowSubclass 的 uid，任意不冲突值即可）
+#[cfg(windows)]
+const DISPLAY_HOOK_SUBCLASS_ID: usize = 1;
+
+/// 显示环境变化钩子的回调环境：单主窗口应用，全局一份
+#[cfg(windows)]
+static DISPLAY_HOOK: OnceLock<(WebviewWindow, Arc<WindowCtlState>)> = OnceLock::new();
+
+/// 子类过程：子类回调是裸函数指针拿不到 Rust 环境，从全局取窗口与状态。
+/// 只关心四类消息，其余原样交回原窗口过程（DefSubclassProc）。
+#[cfg(windows)]
+unsafe extern "system" fn display_change_subclass(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _subclass_id: usize,
+    _ref_data: usize,
+) -> LRESULT {
+    use windows::Win32::UI::{
+        Shell::DefSubclassProc,
+        WindowsAndMessaging::{WM_DISPLAYCHANGE, WM_DPICHANGED, WM_POWERBROADCAST},
+    };
+
+    let hit = matches!(msg, WM_DISPLAYCHANGE | WM_DPICHANGED)
+        || (msg == WM_POWERBROADCAST
+            && (wparam.0 == PBT_APMRESUME || wparam.0 == PBT_APMRESUMEAUTOMATIC));
+    if hit {
+        if let Some((window, state)) = DISPLAY_HOOK.get() {
+            reseat_after_display_change(window.clone(), state.clone());
+        }
+    }
+    DefSubclassProc(hwnd, msg, wparam, lparam)
+}
+
+/// 挂显示环境变化钩子：子类化主窗口过程，命中「分辨率变化/显示器插拔/
+/// 缩放比例变化/睡眠唤醒」即触发延迟重贴位（真机唤不回问题的根治层）。
+/// 失败仅返回 Err 由调用方记日志——2 秒轮询自愈仍在，不因钩子缺失裸奔。
+#[cfg(windows)]
+pub fn install_display_change_hook(
+    window: &WebviewWindow,
+    state: &Arc<WindowCtlState>,
+) -> Result<(), String> {
+    use windows::Win32::UI::Shell::SetWindowSubclass;
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let _ = DISPLAY_HOOK.set((window.clone(), state.clone()));
+    unsafe {
+        SetWindowSubclass(
+            hwnd,
+            Some(display_change_subclass),
+            DISPLAY_HOOK_SUBCLASS_ID,
+            0,
+        )
+        .ok()
+        .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn install_display_change_hook(
+    _: &WebviewWindow,
+    _: &Arc<WindowCtlState>,
+) -> Result<(), String> {
+    Ok(())
+}
+
 pub fn start_fullscreen_monitor(window: WebviewWindow, state: Arc<WindowCtlState>) {
     tauri::async_runtime::spawn(async move {
         let mut fullscreen_check = tokio::time::interval(Duration::from_secs(2));
@@ -1060,6 +1281,42 @@ pub fn start_fullscreen_monitor(window: WebviewWindow, state: Arc<WindowCtlState
                             let _ = window.hide();
                         } else if !fullscreen && was_fullscreen {
                             let _ = set_mode(&window, &state, WindowMode::Collapsed, true);
+                        }
+                    }
+
+                    // 自愈兜底（真机反馈 2026-09-16）：窗口可见却停在所有屏幕之外
+                    // （睡眠/换屏遗留、事件钩子漏掉的路径），或被息屏/唤醒压扁
+                    // （宽高低于合法最小值），自动恢复。窗口模式：位置跑出只拉
+                    // 回主屏中央，压扁则整体重置默认几何；贴边模式：实际几何与
+                    // 期望几何（恒贴主屏右缘）偏差超容差即重贴——动画进行中的
+                    // ~130ms 若被撞上，表现为动画瞬间落位，无害。隐藏中的窗口
+                    // 不碰（全屏覆盖/用户自藏）。
+                    if window.is_visible().unwrap_or(false) {
+                        match state.app_mode() {
+                            AppShellMode::Window => restore_window_mode_geometry(&window),
+                            AppShellMode::Edge => {
+                                let mode = *state
+                                    .mode
+                                    .lock()
+                                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                                let ratio = state.strip_center_ratio();
+                                let expected = window.primary_monitor().ok().flatten().map(
+                                    |monitor| geometry_for(monitor, mode, ratio),
+                                );
+                                let current = current_geometry(&window);
+                                if let (Some(expected), Some(current)) = (expected, current) {
+                                    let deviates = (expected.size.width - current.size.width)
+                                        .abs()
+                                        > 2.0
+                                        || (expected.size.height - current.size.height).abs()
+                                            > 2.0
+                                        || (expected.position.x - current.position.x).abs() > 2.0
+                                        || (expected.position.y - current.position.y).abs() > 2.0;
+                                    if deviates {
+                                        let _ = apply_geometry(&window, mode, ratio);
+                                    }
+                                }
+                            }
                         }
                     }
                 }

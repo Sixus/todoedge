@@ -57,7 +57,13 @@ pub fn run() {
                     }
                 });
             }
-            window_ctl::start_fullscreen_monitor(main_window, window_state.clone());
+            window_ctl::start_fullscreen_monitor(main_window.clone(), window_state.clone());
+            // 显示环境变化钩子：分辨率/显示器插拔/睡眠唤醒后自动重贴窗口，
+            // 修复「窗口停在已不存在的屏幕区域导致唤不回」（失败仅记日志，
+            // 上面的 2 秒轮询自愈仍在兜底）
+            if let Err(e) = window_ctl::install_display_change_hook(&main_window, &window_state) {
+                eprintln!("挂显示环境变化钩子失败：{e}");
+            }
             app.manage(window_state);
 
             // 通知线程先于调度器启动（回调依赖 Db State；调度器会投递 Toast）
