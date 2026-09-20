@@ -2,8 +2,6 @@
 
 贴边常驻的极简 Windows 桌面待办：平时缩在屏幕右缘一条 6px 细线，鼠标碰一下滑出面板，记完即走，不打断手头的事。数据全部存在本机 SQLite，不联网、不上传。
 
-![深色面板](docs/design/panel-dark.png)
-![浅色面板](docs/design/panel-light.png)
 
 ## 功能一览
 
